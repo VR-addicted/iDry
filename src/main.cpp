@@ -4869,7 +4869,8 @@ void handlePortalRoot() {
                             }
                             if (sandBottom) {
                                 sandBottom.setAttribute("fill", "#f87171");
-                                sandBottom.style.transform = "scale(" + (1 - pct) + ")";
+                                let bScale = (pct < 1) ? Math.pow(1 - pct, 0.45) : 0;
+                                sandBottom.style.transform = "scale(" + bScale + ")";
                             }
                         } else {
                             // NORMAL COUNTDOWN -> HELLBLAUER SAND!
@@ -4898,7 +4899,10 @@ void handlePortalRoot() {
                             }
                             if (sandBottom) {
                                 sandBottom.setAttribute("fill", "#38bdf8");
-                                sandBottom.style.transform = "scale(" + (1 - pct) + ")";
+                                let totalMin = data.purge_interval_min || 240;
+                                let exp = Math.max(0.16, 0.36 - 0.08 * Math.log10(Math.max(10, totalMin) / 10));
+                                let bScale = (pct < 1) ? Math.pow(1 - pct, exp) : 0;
+                                sandBottom.style.transform = "scale(" + bScale + ")";
                             }
                         }
                     }
