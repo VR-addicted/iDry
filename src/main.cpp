@@ -165,6 +165,7 @@ struct Config {
   int purge_interval_min = 240; // Purge interval in minutes (0 = disabled, 10 to 1440 min)
   int purge_duration_sec = 30;   // Purge opening duration in seconds (10 to 600 sec)
   float servo_total_meters = 0.0f; // Total Servo travel distance in meters (r=27mm)
+  char web_language[8] = "de";  // UI language preference ("de" or "en")
 };
 
 // --- T-PIPE LIVE SYSTEM LOGGING ARCHITECTURE ---
@@ -1013,6 +1014,7 @@ bool loadConfiguration() {
   sysConfig.purge_interval_min = doc["purge_interval_min"] | 240;
   sysConfig.purge_duration_sec = doc["purge_duration_sec"] | 30;
   sysConfig.servo_total_meters = doc["servo_total_meters"] | 0.0f;
+  strlcpy(sysConfig.web_language, doc["web_language"] | "de", sizeof(sysConfig.web_language));
 
   loadOdometer();
 
@@ -1053,6 +1055,7 @@ bool saveConfiguration() {
   doc["purge_interval_min"] = sysConfig.purge_interval_min;
   doc["purge_duration_sec"] = sysConfig.purge_duration_sec;
   doc["servo_total_meters"] = sysConfig.servo_total_meters;
+  doc["web_language"] = sysConfig.web_language;
 
   // Compute and embed CRC32 checksum
   uint32_t crcVal = calculateConfigCRC(doc);
@@ -2160,6 +2163,7 @@ void handleGetData() {
   doc["servo_lifetime_pct"] = (float)round(lifetimePct * 100.0f) / 100.0f;
   doc["max_alloc_heap"] = ESP.getMaxAllocHeap();
   doc["log_level"] = sysConfig.log_level;
+  doc["web_language"] = sysConfig.web_language;
 
   if (!authRequired || isAuthenticated) {
     JsonArray logsArr = doc["sys_logs"].to<JsonArray>();
@@ -2361,6 +2365,23 @@ void handleSetLogLevel() {
     }
   }
   server.send(200, "application/json", "{\"status\":\"ok\"}");
+}
+
+void handleSetLanguageApi() {
+  if (server.hasArg("lang")) {
+    String lang = server.arg("lang");
+    if (lang == "de" || lang == "en") {
+      // If user is authenticated, permanently persist language in Flash memory
+      if (isWebAuthenticated()) {
+        strlcpy(sysConfig.web_language, lang.c_str(), sizeof(sysConfig.web_language));
+        saveConfiguration();
+        addAppLogEx(1, "[Config] Web UI Language changed to '%s' (Saved to Flash)", sysConfig.web_language);
+        server.send(200, "application/json", "{\"status\":\"ok\",\"saved\":true}");
+        return;
+      }
+    }
+  }
+  server.send(200, "application/json", "{\"status\":\"ok\",\"saved\":false}");
 }
 
 // Active connection check (TCP Handshake time heuristic to verify gateway is
@@ -2587,6 +2608,41 @@ void handlePortalRoot() {
           border-radius: 50%;
           transform: var(--ts, translateX(-100%));
           transition: transform 0.2s ease-out;
+        }
+        .lang-pill {
+            display: inline-flex;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 20px;
+            padding: 2px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+        }
+        .lang-btn {
+            background: transparent;
+            border: 1px solid transparent;
+            color: #94a3b8;
+            font-size: 13px;
+            padding: 3px 7px;
+            border-radius: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            user-select: none;
+        }
+        .lang-btn:hover {
+            color: #f8fafc;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .lang-btn.active {
+            background: rgba(56, 189, 248, 0.2) !important;
+            border-color: rgba(56, 189, 248, 0.45) !important;
+            color: #38bdf8 !important;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
         }
         details.hist-toggle { margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px; }
         details.hist-toggle summary { font-size: 11px; color: #94a3b8; cursor: pointer; user-select: none; font-weight: 600; outline: none; margin-bottom: 4px; }
@@ -2923,14 +2979,29 @@ void handlePortalRoot() {
 </head>
 <body>
     <div class="container">
-        <h1 id="device-title">IDRY-26 Loading...</h1>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; position: relative;">
+            <div style="width: 85px;"></div>
+            <h1 id="device-title" style="margin-bottom: 0; text-align: center; flex: 1;">IDRY-26 Loading...</h1>
+            <div style="width: 85px; display: flex; justify-content: flex-end;">
+                <div class="lang-pill">
+                    <button type="button" id="lang-btn-de" class="lang-btn active" onclick="setLanguage('de')" title="Deutsch">
+                        <svg width="14" height="10" viewBox="0 0 16 12" style="border-radius:2px; display:inline-block; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.6);"><rect width="16" height="4" y="0" fill="#111"/><rect width="16" height="4" y="4" fill="#D00"/><rect width="16" height="4" y="8" fill="#FFCE00"/></svg>
+                        <span style="font-size: 10.5px; font-weight: bold; margin-left: 2px;">DE</span>
+                    </button>
+                    <button type="button" id="lang-btn-en" class="lang-btn" onclick="setLanguage('en')" title="English (US)">
+                        <svg width="14" height="10" viewBox="0 0 16 12" style="border-radius:2px; display:inline-block; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.6);"><rect width="16" height="12" fill="#B22234"/><rect width="16" height="1.85" y="1.85" fill="#FFF"/><rect width="16" height="1.85" y="5.54" fill="#FFF"/><rect width="16" height="1.85" y="9.23" fill="#FFF"/><rect width="7" height="6.5" fill="#3C3B6E"/><circle cx="2.2" cy="2" r="0.6" fill="#fff"/><circle cx="4.8" cy="2" r="0.6" fill="#fff"/><circle cx="3.5" cy="3.5" r="0.6" fill="#fff"/><circle cx="2.2" cy="5" r="0.6" fill="#fff"/><circle cx="4.8" cy="5" r="0.6" fill="#fff"/></svg>
+                        <span style="font-size: 10.5px; font-weight: bold; margin-left: 2px;">EN</span>
+                    </button>
+                </div>
+            </div>
+        </div>
         
         <!-- Smart Live-Advisor & Grow-Heuristic Ticker Widget -->
         <div class="advisor-card" id="advisor-widget">
             <div class="advisor-header">
                 <div class="advisor-title">
                     <span class="advisor-icon">🧠</span>
-                    <span>Grow Advisor &amp; Live Ticker</span>
+                    <span data-i18n="advisor_title">Grow Advisor &amp; Live Ticker</span>
                 </div>
                 <div class="advisor-controls">
                     <button type="button" id="advisor-prev-btn" class="advisor-nav-btn" onclick="prevAdvisorMsg()" title="Vorherige ältere Nachricht">◀</button>
@@ -2941,9 +3012,9 @@ void handlePortalRoot() {
             </div>
             <div class="advisor-ticker-box" id="advisor-ticker-box" title="Klicken für Volltext-Ansicht & Historie" onmouseenter="pauseAdvisorTicker()" onmouseleave="resumeAdvisorTicker()" onpointerdown="startAdvisorDrag(event)">
                 <div class="advisor-ticker-track" id="advisor-ticker-track">
-                    <span class="advisor-badge badge-optimal">🟢 SYSTEMBEREIT</span>
+                    <span class="advisor-badge badge-optimal" id="advisor-init-badge">🟢 SYSTEMBEREIT</span>
                     <span class="advisor-time">[--:--:--]</span>
-                    <span class="advisor-msg-text">Smart Live Advisor Engine bereit. Analysiere thermodynamische Klimadaten...</span>
+                    <span class="advisor-msg-text" id="advisor-init-text">Smart Live Advisor Engine bereit. Analysiere thermodynamische Klimadaten...</span>
                 </div>
             </div>
             <!-- Interactive Full-Text Speech Bubble Modal -->
@@ -2951,15 +3022,15 @@ void handlePortalRoot() {
                 <div class="advisor-popup-header">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span class="advisor-icon">🧠</span>
-                        <span style="font-weight: bold; color: #38bdf8; font-size: 12.5px; letter-spacing: 0.5px;">ADVISOR VOLLTEXT</span>
+                        <span data-i18n="advisor_popup_title" style="font-weight: bold; color: #38bdf8; font-size: 12.5px; letter-spacing: 0.5px;">ADVISOR VOLLTEXT</span>
                     </div>
                     <button type="button" class="advisor-popup-close" onclick="closeAdvisorPopup(event)" title="Schließen">✕</button>
                 </div>
                 <div id="advisor-popup-content" class="advisor-popup-content"></div>
                 <div class="advisor-popup-footer">
-                    <button type="button" id="advisor-popup-prev-btn" class="advisor-nav-btn" onclick="prevAdvisorPopup(event)" title="Vorherige ältere Nachricht">◀ Älter</button>
+                    <button type="button" id="advisor-popup-prev-btn" class="advisor-nav-btn" onclick="prevAdvisorPopup(event)" data-i18n="advisor_older">◀ Älter</button>
                     <span id="advisor-popup-counter" class="advisor-counter">1 / 1</span>
-                    <button type="button" id="advisor-popup-next-btn" class="advisor-nav-btn" onclick="nextAdvisorPopup(event)" title="Nächste neuere Nachricht">Neuer ▶</button>
+                    <button type="button" id="advisor-popup-next-btn" class="advisor-nav-btn" onclick="nextAdvisorPopup(event)" data-i18n="advisor_newer">Neuer ▶</button>
                 </div>
             </div>
         </div>
@@ -2967,7 +3038,7 @@ void handlePortalRoot() {
         <div class="grid">
             <div class="card">
                 <div id="strat-section" style="margin-bottom: 14px;">
-                    <div class="card-title"><span>Dry Strategy</span><span class="info-btn" onclick="toggleInfo(event, 0)" onmouseenter="showInfo(this, 0)" onmouseleave="hideInfo(this)">i</span></div>
+                    <div class="card-title"><span data-i18n="dry_strategy">Dry Strategy</span><span class="info-btn" onclick="toggleInfo(event, 0)" onmouseenter="showInfo(this, 0)" onmouseleave="hideInfo(this)">i</span></div>
                     <div style="display: flex; gap: 6px;">
                         <button id="strat-btn-6060" onclick="setDryStrategy(0, currentHygroLimit)" style="flex: 1; padding: 10px 0; background: #22c55e; border: 1px solid rgba(255,255,255,0.2); color: white; font-weight: bold; border-radius: 8px; cursor: pointer; transition: all 0.2s;">60/60</button>
                         <button id="strat-btn-vpd" onclick="setDryStrategy(1, currentHygroLimit)" style="flex: 1; padding: 10px 0; background: #1e293b; border: 1px solid rgba(255,255,255,0.15); color: #94a3b8; font-weight: bold; border-radius: 8px; cursor: pointer; transition: all 0.2s;">VPD</button>
@@ -3007,7 +3078,7 @@ void handlePortalRoot() {
                 </div>
                 <div id="hygro-limit-box" style="display: none; background: rgba(15,23,42,0.5); padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 14px;">
                     <div style="font-size: 11px; color: #94a3b8; font-weight: 600; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; position: relative;">
-                        <span>Hygro Limit (Schimmelschutz):</span>
+                        <span data-i18n="hygro_limit">Hygro Limit (Schimmelschutz):</span>
                         <span class="info-btn" onclick="toggleInfo(event, 2)" onmouseenter="showInfo(this, 2)" onmouseleave="hideInfo(this)">i</span>
                     </div>
                     <div style="display: flex; gap: 14px; font-size: 13px; font-weight: bold; margin-bottom: 8px;">
@@ -3023,32 +3094,32 @@ void handlePortalRoot() {
                     </div>
                     <div style="font-size: 11px; color: #94a3b8; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span>RH calculated soll:</span>
+                            <span data-i18n="rh_calc_soll">RH calculated soll:</span>
                             <span id="calc-soll-rh" style="font-weight: bold; color: #38bdf8; font-size: 12px;">--</span>
                         </div>
                         <div id="calc-limit-notice" style="display: none; text-align: right; font-weight: bold; color: #f87171; font-size: 11px; margin-top: 3px;"></div>
                     </div>
                 </div>
-                <div class="card-title" style="margin-top: 14px;"><span>Potentiometer</span><span class="info-btn" onclick="toggleInfo(event, 3)" onmouseenter="showInfo(this, 3)" onmouseleave="hideInfo(this)">i</span></div>
-                <div class="value-row"><span id="poti-a-label">Sollwert Feuchte (A):</span><span class="val" id="poti-a">--</span></div>
-                <div class="value-row"><span>Gain Faktor (B):</span><span class="val" id="poti-b">--</span></div>
-                <div class="value-row"><span>Rotor-Offset (C):</span><span class="val" id="poti-c">--</span></div>
+                <div class="card-title" style="margin-top: 14px;"><span data-i18n="potentiometer">Potentiometer</span><span class="info-btn" onclick="toggleInfo(event, 3)" onmouseenter="showInfo(this, 3)" onmouseleave="hideInfo(this)">i</span></div>
+                <div class="value-row"><span id="poti-a-label" data-i18n="target_hum">Sollwert Feuchte (A):</span><span class="val" id="poti-a">--</span></div>
+                <div class="value-row"><span data-i18n="gain_factor">Gain Faktor (B):</span><span class="val" id="poti-b">--</span></div>
+                <div class="value-row"><span data-i18n="rotor_offset">Rotor-Offset (C):</span><span class="val" id="poti-c">--</span></div>
             </div>
             <div class="card">
-                <div class="card-title"><span>Rotor & Servo</span><span class="info-btn" onclick="toggleInfo(event, 4)" onmouseenter="showInfo(this, 4)" onmouseleave="hideInfo(this)">i</span></div>
-                <div class="value-row"><span>Rotor Stellung:</span><span class="val" id="rotor-pos">--</span></div>
+                <div class="card-title"><span data-i18n="rotor_servo">Rotor & Servo</span><span class="info-btn" onclick="toggleInfo(event, 4)" onmouseenter="showInfo(this, 4)" onmouseleave="hideInfo(this)">i</span></div>
+                <div class="value-row"><span data-i18n="rotor_pos">Rotor Stellung:</span><span class="val" id="rotor-pos">--</span></div>
                 <div class="moon-container">
                     <div id="luna" class="moon"></div>
                 </div>
                 <details open class="hist-toggle" id="details-rotor" ontoggle="renderAllCharts()">
-                    <summary>60m Verlauf (Rotor Öffnung)</summary>
+                    <summary data-i18n="hist_rotor">60m Verlauf (Rotor Öffnung)</summary>
                     <div class="spark-box" onclick="openChartZoom('rotor', 'Rotor Stellung Verlauf')">
                         <canvas id="cv-rotor"></canvas>
                     </div>
                 </details>
                 <div id="purge-section" style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px;">
                     <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; position: relative;">
-                        <span>⏳ Stoßlüftungs-Timer</span>
+                        <span data-i18n="purge_timer">⏳ Stoßlüftungs-Timer</span>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <span id="purge-badge" style="font-size: 10.5px; font-family: monospace; font-weight: bold; padding: 2px 6px; border-radius: 4px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">Aus</span>
                             <span class="info-btn" onclick="toggleInfo(event, 5)" onmouseenter="showInfo(this, 5)" onmouseleave="hideInfo(this)">i</span>
@@ -3068,7 +3139,7 @@ void handlePortalRoot() {
                     <!-- Dual 3D Selection Wheels (Drum Pickers) Below Sanduhr -->
                     <div style="display: flex; gap: 10px; margin-top: 6px;">
                         <div style="flex: 1;">
-                            <label style="font-size: 10px; color: #94a3b8; display: block; margin-bottom: 4px; text-align: center; font-weight: 600;">Intervall:</label>
+                            <label style="font-size: 10px; color: #94a3b8; display: block; margin-bottom: 4px; text-align: center; font-weight: 600;" data-i18n="purge_interval">Intervall:</label>
                             <div class="drum-picker-wrapper">
                                 <div class="drum-picker" id="wheel-interval">
                                     <div class="drum-item" data-val="0">Aus</div>
@@ -3089,7 +3160,7 @@ void handlePortalRoot() {
                             </div>
                         </div>
                         <div style="flex: 1;">
-                            <label style="font-size: 10px; color: #94a3b8; display: block; margin-bottom: 4px; text-align: center; font-weight: 600;">Dauer:</label>
+                            <label style="font-size: 10px; color: #94a3b8; display: block; margin-bottom: 4px; text-align: center; font-weight: 600;" data-i18n="purge_duration">Dauer:</label>
                             <div class="drum-picker-wrapper">
                                 <div class="drum-picker" id="wheel-duration">
                                     <div class="drum-item" data-val="10">10 sec</div>
@@ -3113,18 +3184,18 @@ void handlePortalRoot() {
             </div>
             <div class="card" id="sensor-card-0" style="display:none;">
                 <div class="card-title"><span id="sensor-title-0">Sensor 1</span><span class="info-btn" onclick="toggleInfo(event, 9)" onmouseenter="showInfo(this, 9)" onmouseleave="hideInfo(this)">i</span></div>
-                <div class="value-row"><span>Temperatur:</span><span class="val" id="temp-0">--</span></div>
-                <div class="value-row"><span>Feuchtigkeit:</span><span class="val" id="hum-0">--</span></div>
-                <div class="value-row" id="dp-row-0"><span>Taupunkt:</span><span class="val" id="dp-0">--</span></div>
-                <div class="value-row" id="press-row-0"><span>Luftdruck:</span><span class="val" id="press-0">--</span></div>
+                <div class="value-row"><span data-i18n="temp">Temperatur:</span><span class="val" id="temp-0">--</span></div>
+                <div class="value-row"><span data-i18n="hum">Feuchtigkeit:</span><span class="val" id="hum-0">--</span></div>
+                <div class="value-row" id="dp-row-0"><span data-i18n="dewpoint">Taupunkt:</span><span class="val" id="dp-0">--</span></div>
+                <div class="value-row" id="press-row-0"><span data-i18n="pressure">Luftdruck:</span><span class="val" id="press-0">--</span></div>
                 <details open class="hist-toggle" id="details-temp-0" ontoggle="renderAllCharts()">
-                    <summary>60m Verlauf (Temperatur)</summary>
+                    <summary data-i18n="hist_temp">60m Verlauf (Temperatur)</summary>
                     <div class="spark-box" onclick="openChartZoom('temp_0', 'Sensor 1 Temperatur')">
                         <canvas id="cv-temp-0"></canvas>
                     </div>
                 </details>
                 <details open class="hist-toggle" id="details-hum-0" ontoggle="renderAllCharts()">
-                    <summary>60m Verlauf (Luftfeuchtigkeit)</summary>
+                    <summary data-i18n="hist_hum">60m Verlauf (Luftfeuchtigkeit)</summary>
                     <div class="spark-box" onclick="openChartZoom('hum_0', 'Sensor 1 Luftfeuchtigkeit')">
                         <canvas id="cv-hum-0"></canvas>
                     </div>
@@ -3132,18 +3203,18 @@ void handlePortalRoot() {
             </div>
             <div class="card" id="sensor-card-1" style="display:none;">
                 <div class="card-title"><span id="sensor-title-1">Sensor 2</span><span class="info-btn" onclick="toggleInfo(event, 10)" onmouseenter="showInfo(this, 10)" onmouseleave="hideInfo(this)">i</span></div>
-                <div class="value-row"><span>Temperatur:</span><span class="val" id="temp-1">--</span></div>
-                <div class="value-row"><span>Feuchtigkeit:</span><span class="val" id="hum-1">--</span></div>
-                <div class="value-row" id="dp-row-1"><span>Taupunkt:</span><span class="val" id="dp-1">--</span></div>
-                <div class="value-row" id="press-row-1"><span>Luftdruck:</span><span class="val" id="press-1">--</span></div>
+                <div class="value-row"><span data-i18n="temp">Temperatur:</span><span class="val" id="temp-1">--</span></div>
+                <div class="value-row"><span data-i18n="hum">Feuchtigkeit:</span><span class="val" id="hum-1">--</span></div>
+                <div class="value-row" id="dp-row-1"><span data-i18n="dewpoint">Taupunkt:</span><span class="val" id="dp-1">--</span></div>
+                <div class="value-row" id="press-row-1"><span data-i18n="pressure">Luftdruck:</span><span class="val" id="press-1">--</span></div>
                 <details open class="hist-toggle" id="details-temp-1" ontoggle="renderAllCharts()">
-                    <summary>60m Verlauf (Temperatur)</summary>
+                    <summary data-i18n="hist_temp">60m Verlauf (Temperatur)</summary>
                     <div class="spark-box" onclick="openChartZoom('temp_1', 'Sensor 2 Temperatur')">
                         <canvas id="cv-temp-1"></canvas>
                     </div>
                 </details>
                 <details open class="hist-toggle" id="details-hum-1" ontoggle="renderAllCharts()">
-                    <summary>60m Verlauf (Luftfeuchtigkeit)</summary>
+                    <summary data-i18n="hist_hum">60m Verlauf (Luftfeuchtigkeit)</summary>
                     <div class="spark-box" onclick="openChartZoom('hum_1', 'Sensor 2 Luftfeuchtigkeit')">
                         <canvas id="cv-hum-1"></canvas>
                     </div>
@@ -3151,11 +3222,11 @@ void handlePortalRoot() {
             </div>
             <div class="card" id="light-card-0" style="display:none;">
                 <div class="card-title"><span id="light-title-0">TSL2561 (1)</span><span class="info-btn" onclick="toggleInfo(event, 11)" onmouseenter="showInfo(this, 11)" onmouseleave="hideInfo(this)">i</span></div>
-                <div class="value-row"><span>Helligkeit:</span><span class="val" id="lux-val-0">--</span></div>
-                <div class="value-row"><span>Breitband:</span><span class="val" id="broadband-val-0">--</span></div>
-                <div class="value-row"><span>Infrarot:</span><span class="val" id="ir-val-0">--</span></div>
+                <div class="value-row"><span data-i18n="brightness">Helligkeit:</span><span class="val" id="lux-val-0">--</span></div>
+                <div class="value-row"><span data-i18n="broadband">Breitband:</span><span class="val" id="broadband-val-0">--</span></div>
+                <div class="value-row"><span data-i18n="infrared">Infrarot:</span><span class="val" id="ir-val-0">--</span></div>
                 <details open class="hist-toggle" id="details-lux-0" ontoggle="renderAllCharts()">
-                    <summary>60m Verlauf (Helligkeit)</summary>
+                    <summary data-i18n="hist_lux">60m Verlauf (Helligkeit)</summary>
                     <div class="spark-box" onclick="openChartZoom('lux_0', 'TSL2561 (1) Helligkeit')">
                         <canvas id="cv-lux-0"></canvas>
                     </div>
@@ -3163,32 +3234,32 @@ void handlePortalRoot() {
             </div>
             <div class="card" id="light-card-1" style="display:none;">
                 <div class="card-title"><span id="light-title-1">TSL2561 (2)</span><span class="info-btn" onclick="toggleInfo(event, 12)" onmouseenter="showInfo(this, 12)" onmouseleave="hideInfo(this)">i</span></div>
-                <div class="value-row"><span>Helligkeit:</span><span class="val" id="lux-val-1">--</span></div>
-                <div class="value-row"><span>Breitband:</span><span class="val" id="broadband-val-1">--</span></div>
-                <div class="value-row"><span>Infrarot:</span><span class="val" id="ir-val-1">--</span></div>
+                <div class="value-row"><span data-i18n="brightness">Helligkeit:</span><span class="val" id="lux-val-1">--</span></div>
+                <div class="value-row"><span data-i18n="broadband">Breitband:</span><span class="val" id="broadband-val-1">--</span></div>
+                <div class="value-row"><span data-i18n="infrared">Infrarot:</span><span class="val" id="ir-val-1">--</span></div>
                 <details open class="hist-toggle" id="details-lux-1" ontoggle="renderAllCharts()">
-                    <summary>60m Verlauf (Helligkeit)</summary>
+                    <summary data-i18n="hist_lux">60m Verlauf (Helligkeit)</summary>
                     <div class="spark-box" onclick="openChartZoom('lux_1', 'TSL2561 (2) Helligkeit')">
                         <canvas id="cv-lux-1"></canvas>
                     </div>
                 </details>
             </div>
             <div class="card" id="vpd-card" style="display:none; grid-column: 1 / -1;">
-                <div class="card-title"><span>VPD (Sättigungsdefizit)</span><span class="info-btn" onclick="toggleInfo(event, 8)" onmouseenter="showInfo(this, 8)" onmouseleave="hideInfo(this)">i</span></div>
+                <div class="card-title"><span data-i18n="vpd_card_title">VPD (Sättigungsdefizit)</span><span class="info-btn" onclick="toggleInfo(event, 8)" onmouseenter="showInfo(this, 8)" onmouseleave="hideInfo(this)">i</span></div>
                 <div style="display: flex; gap: 15px; flex-wrap: wrap;">
                     <div id="vpd-row-0" style="display:none; flex: 1; min-width: 240px;">
-                        <div class="value-row"><span>VPD Innen (BME280):</span><span class="val" id="vpd-val-0">--</span></div>
+                        <div class="value-row"><span data-i18n="vpd_indoor">VPD Innen (BME280):</span><span class="val" id="vpd-val-0">--</span></div>
                         <details open class="hist-toggle" id="details-vpd-0" ontoggle="renderAllCharts()">
-                            <summary>60m Verlauf (VPD Innen)</summary>
+                            <summary data-i18n="hist_vpd_in">60m Verlauf (VPD Innen)</summary>
                             <div class="spark-box" onclick="openChartZoom('vpd_0', 'VPD Innen (BME280)')">
                                 <canvas id="cv-vpd-0"></canvas>
                             </div>
                         </details>
                     </div>
                     <div id="vpd-row-1" style="display:none; flex: 1; min-width: 240px;">
-                        <div class="value-row"><span>VPD Außen (SHT31):</span><span class="val" id="vpd-val-1">--</span></div>
+                        <div class="value-row"><span data-i18n="vpd_outdoor">VPD Außen (SHT31):</span><span class="val" id="vpd-val-1">--</span></div>
                         <details open class="hist-toggle" id="details-vpd-1" ontoggle="renderAllCharts()">
-                            <summary>60m Verlauf (VPD Außen)</summary>
+                            <summary data-i18n="hist_vpd_out">60m Verlauf (VPD Außen)</summary>
                             <div class="spark-box" onclick="openChartZoom('vpd_1', 'VPD Außen (SHT31)')">
                                 <canvas id="cv-vpd-1"></canvas>
                             </div>
@@ -3197,24 +3268,24 @@ void handlePortalRoot() {
                 </div>
             </div>
             <div class="card" id="espnow-card" style="display:none;">
-                <div class="card-title"><span>ESPNOW</span><span class="info-btn" onclick="toggleInfo(event, 6)" onmouseenter="showInfo(this, 6)" onmouseleave="hideInfo(this)">i</span></div>
-                <div class="value-row"><span>Rolle:</span><span class="val" id="espnow-val-role" style="font-weight: bold; text-transform: uppercase;">--</span></div>
-                <div class="value-row"><span>Verbindung:</span><span class="val" id="espnow-val-conn">--</span></div>
-                <div class="value-row"><span>Protokoll:</span><span class="val" id="espnow-val-pv">--</span></div>
+                <div class="card-title"><span data-i18n="espnow_title">ESPNOW</span><span class="info-btn" onclick="toggleInfo(event, 6)" onmouseenter="showInfo(this, 6)" onmouseleave="hideInfo(this)">i</span></div>
+                <div class="value-row"><span data-i18n="espnow_role">Rolle:</span><span class="val" id="espnow-val-role" style="font-weight: bold; text-transform: uppercase;">--</span></div>
+                <div class="value-row"><span data-i18n="espnow_conn">Verbindung:</span><span class="val" id="espnow-val-conn">--</span></div>
+                <div class="value-row"><span data-i18n="espnow_proto">Protokoll:</span><span class="val" id="espnow-val-pv">--</span></div>
                 <details open class="hist-toggle" id="details-espnow" ontoggle="renderAllCharts()">
-                    <summary>60m Verbindungsausfälle</summary>
+                    <summary data-i18n="hist_espnow">60m Verbindungsausfälle</summary>
                     <div class="spark-box" onclick="openChartZoom('espnow', 'ESP-NOW Link Loss Verlauf')">
                         <canvas id="cv-espnow"></canvas>
                     </div>
                 </details>
             </div>
             <div class="card" id="mqtt-card" style="display:none;">
-                <div class="card-title"><span id="mqtt-title">MQTT Dashboard</span><span class="info-btn" onclick="toggleInfo(event, 7)" onmouseenter="showInfo(this, 7)" onmouseleave="hideInfo(this)">i</span></div>
-                <div class="value-row"><span>Broker:</span><span class="val" id="mqtt-broker">--</span></div>
-                <div class="value-row"><span>Status:</span><span class="val" id="mqtt-status">--</span></div>
-                <div class="value-row"><span style="flex-shrink: 0; margin-right: 10px;">Topic:</span><span class="val" id="mqtt-topic" style="font-size:11px; text-align: right; word-break:break-all;">--</span></div>
+                <div class="card-title"><span id="mqtt-title" data-i18n="mqtt_title">MQTT Dashboard</span><span class="info-btn" onclick="toggleInfo(event, 7)" onmouseenter="showInfo(this, 7)" onmouseleave="hideInfo(this)">i</span></div>
+                <div class="value-row"><span data-i18n="mqtt_broker">Broker:</span><span class="val" id="mqtt-broker">--</span></div>
+                <div class="value-row"><span data-i18n="mqtt_status">Status:</span><span class="val" id="mqtt-status">--</span></div>
+                <div class="value-row"><span style="flex-shrink: 0; margin-right: 10px;" data-i18n="mqtt_topic">Topic:</span><span class="val" id="mqtt-topic" style="font-size:11px; text-align: right; word-break:break-all;">--</span></div>
                 <details open class="hist-toggle" id="details-mqtt" ontoggle="renderAllCharts()">
-                    <summary>60m Broker Ausfälle</summary>
+                    <summary data-i18n="hist_mqtt">60m Broker Ausfälle</summary>
                     <div class="spark-box" onclick="openChartZoom('mqtt', 'MQTT Link Loss Verlauf')">
                         <canvas id="cv-mqtt"></canvas>
                     </div>
@@ -3225,22 +3296,22 @@ void handlePortalRoot() {
         <!-- Protected UI Login Card -->
         <div id="login-card" class="card" style="display:none; border:1px solid rgba(129, 140, 248, 0.4); background:rgba(30, 41, 59, 0.7); text-align:center; padding:22px; margin-bottom:20px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);">
             <div style="font-size:28px; margin-bottom:6px;">🔒</div>
-            <div style="font-size:15px; font-weight:bold; color:#818cf8; margin-bottom:6px;">Webinterface geschützt</div>
-            <p style="font-size:12.5px; color:#cbd5e1; margin-bottom:16px;">Für erweiterte Log-Konsolen &amp; Einstellungen bitte Anmelden:</p>
+            <div data-i18n="login_title" style="font-size:15px; font-weight:bold; color:#818cf8; margin-bottom:6px;">Webinterface geschützt</div>
+            <p data-i18n="login_desc" style="font-size:12.5px; color:#cbd5e1; margin-bottom:16px;">Für erweiterte Log-Konsolen &amp; Einstellungen bitte Anmelden:</p>
             <div style="display:flex; gap:10px; justify-content:center; max-width:380px; margin:0 auto;">
                 <input type="password" id="login-pass-input" placeholder="Passwort eingeben..." onkeypress="if(event.key==='Enter') performUiLogin()" style="flex:1; padding:9px 12px; background:rgba(15,23,42,0.8); border:1px solid rgba(255,255,255,0.2); border-radius:8px; color:white; font-size:13px; outline:none;">
-                <button type="button" onclick="performUiLogin()" style="background:linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%); border:none; color:white; padding:9px 18px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:13px; box-shadow:0 4px 12px rgba(79,70,229,0.3); transition:all 0.2s;">Anmelden</button>
+                <button type="button" onclick="performUiLogin()" data-i18n="login_btn" style="background:linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%); border:none; color:white; padding:9px 18px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:13px; box-shadow:0 4px 12px rgba(79,70,229,0.3); transition:all 0.2s;">Anmelden</button>
             </div>
-            <div id="login-err-msg" style="display:none; color:#f87171; font-size:12px; margin-top:10px; font-weight:bold;">Passwort falsch!</div>
+            <div id="login-err-msg" data-i18n="login_err" style="display:none; color:#f87171; font-size:12px; margin-top:10px; font-weight:bold;">Passwort falsch!</div>
         </div>
 
         <div class="card">
-            <div class="card-title"><span>System Status</span><span class="info-btn" onclick="toggleInfo(event, 13)" onmouseenter="showInfo(this, 13)" onmouseleave="hideInfo(this)">i</span></div>
-            <div class="value-row"><span>IP-Adresse:</span><span class="val" id="sys-ip">--</span></div>
-            <div class="value-row"><span>Anzeige-Modus:</span><span class="val" id="sys-mode">--</span></div>
+            <div class="card-title"><span data-i18n="sys_status">System Status</span><span class="info-btn" onclick="toggleInfo(event, 13)" onmouseenter="showInfo(this, 13)" onmouseleave="hideInfo(this)">i</span></div>
+            <div class="value-row"><span data-i18n="ip_addr">IP-Adresse:</span><span class="val" id="sys-ip">--</span></div>
+            <div class="value-row"><span data-i18n="disp_mode">Anzeige-Modus:</span><span class="val" id="sys-mode">--</span></div>
             <div class="value-row">
                 <span style="display: flex; align-items: center; gap: 10px;">
-                    Signalstärke RSSI:
+                    <span data-i18n="rssi_signal">Signalstärke RSSI:</span>
                     <div style="width: 50px; height: 8px; background: rgba(255,255,255,0.15); border-radius: 4px; overflow: hidden; display: inline-block;">
                         <div id="sys-rssi-bar" style="width: 0%; height: 100%; transition: width 0.3s, background-color 0.3s; background: #ef4444;"></div>
                     </div>
@@ -3248,7 +3319,7 @@ void handlePortalRoot() {
                 <span class="val" id="sys-rssi">--</span>
             </div>
             <details open class="hist-toggle" id="details-rssi" ontoggle="renderAllCharts()">
-                <summary>4h Verlauf (WLAN RSSI Signal)</summary>
+                <summary data-i18n="hist_rssi">4h Verlauf (WLAN RSSI Signal)</summary>
                 <div class="spark-box" onclick="openChartZoom('rssi', 'WLAN Signalstärke (RSSI)')">
                     <canvas id="cv-rssi"></canvas>
                 </div>
@@ -3260,7 +3331,7 @@ void handlePortalRoot() {
                         <button type="button" title="Local Log-Historie als TXT herunterladen" onclick="event.stopPropagation(); downloadLogHistory(webLogHistoryLocal, 'Local_Console');" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 4px; color: #38bdf8; cursor: pointer; padding: 1px 6px; font-size: 11px; display: inline-flex; align-items: center; gap: 3px; transition: all 0.2s;" onmouseover="this.style.background='rgba(56, 189, 248, 0.35)'" onmouseout="this.style.background='rgba(56, 189, 248, 0.15)'">💾</button>
                     </span>
                     <div style="display: flex; gap: 8px; font-family: monospace; font-size: 10px; background: rgba(0,0,0,0.25); padding: 2px 6px; border-radius: 6px;" onclick="event.stopPropagation();">
-                        <span style="color: #94a3b8; font-size: 9.5px; margin-right: 2px;">Filter:</span>
+                        <span style="color: #94a3b8; font-size: 9.5px; margin-right: 2px;" data-i18n="filter">Filter:</span>
                         <label style="cursor: pointer; color: #38bdf8;"><input type="radio" name="loglvl_loc" value="1" onclick="setLocalFilter(1)" id="lvl-loc-1"> L1</label>
                         <label style="cursor: pointer; color: #eab308;"><input type="radio" name="loglvl_loc" value="2" onclick="setLocalFilter(2)" id="lvl-loc-2"> L2</label>
                         <label style="cursor: pointer; color: #a855f7;"><input type="radio" name="loglvl_loc" value="3" onclick="setLocalFilter(3)" id="lvl-loc-3" checked> L3</label>
@@ -3277,7 +3348,7 @@ void handlePortalRoot() {
                         <button type="button" title="Remote Log-Historie als TXT herunterladen" onclick="event.stopPropagation(); downloadLogHistory(webLogHistoryRemote, 'Remote_Console');" style="background: rgba(192, 132, 252, 0.15); border: 1px solid rgba(192, 132, 252, 0.35); border-radius: 4px; color: #c084fc; cursor: pointer; padding: 1px 6px; font-size: 11px; display: inline-flex; align-items: center; gap: 3px; transition: all 0.2s;" onmouseover="this.style.background='rgba(192, 132, 252, 0.35)'" onmouseout="this.style.background='rgba(192, 132, 252, 0.15)'">💾</button>
                     </span>
                     <div style="display: flex; gap: 8px; font-family: monospace; font-size: 10px; background: rgba(0,0,0,0.25); padding: 2px 6px; border-radius: 6px;" onclick="event.stopPropagation();">
-                        <span style="color: #94a3b8; font-size: 9.5px; margin-right: 2px;">Filter:</span>
+                        <span style="color: #94a3b8; font-size: 9.5px; margin-right: 2px;" data-i18n="filter">Filter:</span>
                         <label style="cursor: pointer; color: #38bdf8;"><input type="radio" name="loglvl_rem" value="1" onclick="setRemoteFilter(1)" id="lvl-rem-1"> L1</label>
                         <label style="cursor: pointer; color: #eab308;"><input type="radio" name="loglvl_rem" value="2" onclick="setRemoteFilter(2)" id="lvl-rem-2"> L2</label>
                         <label style="cursor: pointer; color: #a855f7;"><input type="radio" name="loglvl_rem" value="3" onclick="setRemoteFilter(3)" id="lvl-rem-3" checked> L3</label>
@@ -3292,20 +3363,20 @@ void handlePortalRoot() {
             <span id="footer-text">iDRY26 <span id="footer-fw-ver">--</span> - (bench: <span id="footer-bench" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> loops/s | heap: <span id="footer-heap" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> KB | alloc: <span id="footer-alloc" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> KB)</span>
             <a href="/settings" id="footer-settings-link" style="color: #818cf8; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-weight: 600; padding: 6px 12px; background: rgba(129, 140, 248, 0.1); border-radius: 8px; border: 1px solid rgba(129, 140, 248, 0.2); transition: all 0.2s;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l-.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                Einstellungen
+                <span data-i18n="settings">Einstellungen</span>
             </a>
         </div>
     </div>
 
     <div id="chart-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(15,23,42,0.88); backdrop-filter:blur(10px); z-index:999; align-items:center; justify-content:center; padding:20px;">
         <div style="background:#1e293b; border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:24px; max-width:700px; width:100%; box-shadow:0 25px 50px -12px rgba(0,0,0,0.7); position:relative;">
-            <h2 id="modal-title" style="font-size:18px; color:#818cf8; margin-bottom:15px; text-align:center;">Verlauf (24h Zoom)</h2>
+            <h2 id="modal-title" data-i18n="modal_zoom_title" style="font-size:18px; color:#818cf8; margin-bottom:15px; text-align:center;">Verlauf (24h Zoom)</h2>
             <div style="width:100%; overflow-x:auto; background:#0f172a; border-radius:8px; border:1px solid rgba(255,255,255,0.05); padding:10px; position:relative;" id="modal-canvas-container">
                 <canvas id="modal-canvas" width="600" height="200" style="display:block; width:100%; height:200px; cursor:pointer;"></canvas>
                 <div id="canvas-floating-popup" style="display:none; position:absolute; padding:5px 10px; background:#0f172a; border:1.5px solid #38bdf8; border-radius:6px; font-family:monospace; font-size:12px; color:#fff; pointer-events:none; z-index:10; white-space:nowrap; box-shadow:0 4px 14px rgba(0,0,0,0.7); transform:translate(-50%, -100%); transition: left 0.05s ease-out, top 0.05s ease-out;"></div>
             </div>
-            <div id="modal-tooltip" style="font-family:monospace; font-size:13px; color:#38bdf8; margin-top:12px; text-align:center; min-height:40px; display:flex; flex-direction:column; align-items:center; justify-content:center;">Tippe oder fahre über eine Kerze für Details...</div>
-            <button onclick="closeChartModal()" style="margin-top:18px; width:100%; padding:12px; border-radius:8px; border:none; background:#3b82f6; color:white; font-weight:bold; cursor:pointer; font-size:14px;">Schließen</button>
+            <div id="modal-tooltip" data-i18n="modal_tooltip" style="font-family:monospace; font-size:13px; color:#38bdf8; margin-top:12px; text-align:center; min-height:40px; display:flex; flex-direction:column; align-items:center; justify-content:center;">Tippe oder fahre über eine Kerze für Details...</div>
+            <button onclick="closeChartModal()" data-i18n="modal_close" style="margin-top:18px; width:100%; padding:12px; border-radius:8px; border:none; background:#3b82f6; color:white; font-weight:bold; cursor:pointer; font-size:14px;">Schließen</button>
         </div>
     </div>
 
@@ -3313,11 +3384,11 @@ void handlePortalRoot() {
         <div style="background:#1e293b; border:1px solid rgba(56,189,248,0.3); border-radius:16px; padding:24px; max-width:420px; width:100%; box-shadow:0 25px 50px -12px rgba(0,0,0,0.8); text-align:center;">
             <h3 id="vpd-day-modal-title" style="font-size:16px; color:#38bdf8; margin-bottom:10px;">Tag X aktivieren?</h3>
             <p id="vpd-day-modal-desc" style="font-size:13px; color:#cbd5e1; margin-bottom:20px; line-height:1.5;">Möchtest du den Trocknungs-Fortschritt manuell auf <b>Tag X</b> umstellen?</p>
-            <div style="font-size:11px; color:#94a3b8; margin-bottom:15px; font-weight:bold;">Zum Bestätigen Button 2 Sekunden gedrückt halten:</div>
+            <div data-i18n="vpd_modal_hold" style="font-size:11px; color:#94a3b8; margin-bottom:15px; font-weight:bold;">Zum Bestätigen Button 2 Sekunden gedrückt halten:</div>
             <div style="display:flex; gap:10px;">
-                <button onclick="closeVpdDayModal()" style="flex:1; padding:12px; background:#334155; border:none; color:#94a3b8; font-weight:bold; border-radius:8px; cursor:pointer;">Abbrechen</button>
+                <button onclick="closeVpdDayModal()" data-i18n="vpd_modal_cancel" style="flex:1; padding:12px; background:#334155; border:none; color:#94a3b8; font-weight:bold; border-radius:8px; cursor:pointer;">Abbrechen</button>
                 <button id="btn-confirm-hold" style="flex:1.5; padding:12px; background:#ef4444; border:none; color:white; font-weight:bold; border-radius:8px; cursor:pointer; position:relative; overflow:hidden; user-select:none;">
-                    <span id="btn-confirm-text" style="position:relative; z-index:2;">Gedrückt halten...</span>
+                    <span id="btn-confirm-text" data-i18n="vpd_modal_holding" style="position:relative; z-index:2;">Gedrückt halten...</span>
                     <div id="btn-confirm-progress" style="position:absolute; top:0; left:0; height:100%; width:0%; background:#22c55e; transition: width 0.05s linear; z-index:1;"></div>
                 </button>
             </div>
@@ -3328,9 +3399,9 @@ void handlePortalRoot() {
     <div id="remote-reboot-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(15,23,42,0.85); backdrop-filter:blur(10px); z-index:9999; align-items:center; justify-content:center; padding:20px;">
         <div style="background:#1e293b; border:1px solid #f87171; border-radius:16px; padding:25px; max-width:420px; width:100%; text-align:center; box-shadow:0 25px 50px -12px rgba(0,0,0,0.8);">
             <div style="font-size:36px; margin-bottom:10px;">⚡</div>
-            <h2 style="color:#f87171; font-size:18px; margin-bottom:10px; font-weight:600;">Remote Reboot ausgelöst!</h2>
-            <p style="color:#cbd5e1; font-size:13px; line-height:1.5; margin-bottom:20px;">Dieses Gerät wurde aus der Ferne von deinem gekoppelten Partner-Gerät per ESP-NOW neugestartet.</p>
-            <button type="button" onclick="document.getElementById('remote-reboot-modal').style.display='none';" style="background:rgba(248,113,113,0.15); border:1px solid #f87171; color:#f87171; padding:10px 24px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px; transition:all 0.2s;" onmouseover="this.style.background='rgba(248,113,113,0.3)'" onmouseout="this.style.background='rgba(248,113,113,0.15)'">Verstanden / Schließen</button>
+            <h2 data-i18n="reboot_title" style="color:#f87171; font-size:18px; margin-bottom:10px; font-weight:600;">Remote Reboot ausgelöst!</h2>
+            <p data-i18n="reboot_desc" style="color:#cbd5e1; font-size:13px; line-height:1.5; margin-bottom:20px;">Dieses Gerät wurde aus der Ferne von deinem gekoppelten Partner-Gerät per ESP-NOW neugestartet.</p>
+            <button type="button" onclick="document.getElementById('remote-reboot-modal').style.display='none';" data-i18n="reboot_close" style="background:rgba(248,113,113,0.15); border:1px solid #f87171; color:#f87171; padding:10px 24px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px; transition:all 0.2s;" onmouseover="this.style.background='rgba(248,113,113,0.3)'" onmouseout="this.style.background='rgba(248,113,113,0.15)'">Verstanden / Schließen</button>
         </div>
     </div>
 
@@ -3338,77 +3409,257 @@ void handlePortalRoot() {
     <div id="factory-reset-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(15,23,42,0.9); backdrop-filter:blur(12px); z-index:99999; align-items:center; justify-content:center; padding:20px;">
         <div style="background:#1e293b; border:1px solid #eab308; border-radius:18px; padding:28px; max-width:440px; width:100%; text-align:center; box-shadow:0 25px 50px -12px rgba(0,0,0,0.9);">
             <div style="font-size:42px; margin-bottom:12px;">⚙️</div>
-            <h2 style="color:#eab308; font-size:20px; margin-bottom:12px; font-weight:700;">Werkseinstellungen geladen</h2>
-            <p style="color:#e2e8f0; font-size:13.5px; line-height:1.6; margin-bottom:15px; text-align:left;">
+            <h2 data-i18n="reset_title" style="color:#eab308; font-size:20px; margin-bottom:12px; font-weight:700;">Werkseinstellungen geladen</h2>
+            <p data-i18n="reset_desc" style="color:#e2e8f0; font-size:13.5px; line-height:1.6; margin-bottom:15px; text-align:left;">
                 Das Gerät wurde zurückgesetzt und befindet sich im <b>Einrichtungs-Modus</b> (Access Point).
             </p>
             <div style="background:rgba(234,179,8,0.1); border:1px solid rgba(234,179,8,0.3); border-radius:10px; padding:12px 15px; margin-bottom:20px; text-align:left; font-size:12.5px; color:#fef08a; line-height:1.5;">
-                <b>Schritte zur Wiederherstellung:</b><br>
-                1. Verbinde dich mit dem WLAN <b>iDRY26-Setup</b><br>
-                2. Öffne im Browser <b>http://192.168.4.1</b><br>
-                3. WLAN/MQTT eintragen &amp; speichern.
+                <b data-i18n="reset_steps_title">Schritte zur Wiederherstellung:</b><br>
+                <span data-i18n="reset_step_1">1. Verbinde dich mit dem WLAN <b>iDRY26-Setup</b></span><br>
+                <span data-i18n="reset_step_2">2. Öffne im Browser <b>http://192.168.4.1</b></span><br>
+                <span data-i18n="reset_step_3">3. WLAN/MQTT eintragen &amp; speichern.</span>
             </div>
-            <div style="font-size:11px; color:#94a3b8; margin-bottom:15px;">Hinweis: Standard-Modus ist auf <b>60/60 Blind-Betrieb</b> voreingestellt.</div>
-            <button type="button" onclick="document.getElementById('factory-reset-modal').style.display='none'; document.getElementById('factory-reset-modal').dataset.closed='true';" style="background:rgba(234,179,8,0.2); border:1px solid #eab308; color:#eab308; padding:10px 24px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px; transition:all 0.2s;" onmouseover="this.style.background='rgba(234,179,8,0.35)'" onmouseout="this.style.background='rgba(234,179,8,0.2)'">Verstanden / Schließen</button>
+            <div data-i18n="reset_note" style="font-size:11px; color:#94a3b8; margin-bottom:15px;">Hinweis: Standard-Modus ist auf <b>60/60 Blind-Betrieb</b> voreingestellt.</div>
+            <button type="button" onclick="document.getElementById('factory-reset-modal').style.display='none'; document.getElementById('factory-reset-modal').dataset.closed='true';" data-i18n="reset_close" style="background:rgba(234,179,8,0.2); border:1px solid #eab308; color:#eab308; padding:10px 24px; border-radius:8px; cursor:pointer; font-weight:600; font-size:13px; transition:all 0.2s;" onmouseover="this.style.background='rgba(234,179,8,0.35)'" onmouseout="this.style.background='rgba(234,179,8,0.2)'">Verstanden / Schließen</button>
         </div>
     </div>
     <script>
-        const PANEL_INFOS = {
-            // [0] Dry Strategy
-            0: "<b>Dry Strategy</b><br>Wahl der Trocknungsstrategie: Klassischer 60/60 Modus (60°F / 60% rF), dynamischer VPD Modus oder automatisierter 14-Tage VPD AUTO Stufenplan.",
-            
-            // [1] VPD AUTO Matrix & Timeline
-            1: "<b>VPD AUTO Modus</b><br>Wissenschaftlicher 21x14 Matrix-Stufenplan mit temperaturkompensiertem VPD-Sollwertverlauf über 14 Tage inklusive Schimmelschutz.",
-            
-            // [2] Hygro Limit Schimmelschutz
-            2: "<b>Hygro-Limit Schimmelschutz</b><br>Sicherheits-Obergrenze für die relative Zielfeuchte (70%, 75% oder 80%), um Schimmelbildung in feuchten Umgebungen rigoros zu verhindern.",
-            
-            // [3] Potentiometer
-            3: "<b>Potentiometer</b><br>Analoge Hardware-Regler für Sollwert-Feuchte A (inkl. Rigoros ZU/AUF Schalter), Regelverstärkung B (Gain 0-400%) und virtuellen 0°-Kalibrierungs-Offset C.",
-            
-            // [4] Rotor & Servo
-            4: "<b>Rotor & Servo</b><br>Echtzeit-Stellungsanzeige des Lüftungsrotors (0-100%) mit animierter Mondphasen-Visualisierung und 60-Minuten-Verlaufshistorie.",
-            
-            // [5] Stoßlüftungs-Timer
-            5: "<b>Stoßlüftungs-Timer</b><br>Periodische Zwangsbelüftung mit animierter Sanduhr und 3D-Walzenwählern für Intervall (10m-24h) und Öffnungsdauer (10s-10m).",
-            
-            // [6] ESPNOW
-            6: "<b>ESP-NOW Funkverbindung</b><br>Drahtlose Echtzeit-Synchronisation zwischen Master und Slave-Geräten mit Link-Monitoring und Ausfall-Historie.",
-            
-            // [7] MQTT Dashboard
-            7: "<b>MQTT Dashboard</b><br>Status der Anbindung an Home Assistant / MQTT-Broker mit Verbindungs-Historie und Telemetrie-Topics.",
-            
-            // [8] VPD (Sättigungsdefizit)
-            8: "<b>VPD (Dampfdruckdefizit)</b><br>Berechnetes Sättigungsdefizit der Innen- und Außenluft in kPa zur präzisen Steuerung des Transpirationsdrucks.",
-            
-            // [9] Sensor 1
-            9: "<b>Sensor 1 (Innen)</b><br>Primärer Klimasensor (BME280 / SHT3x) für Temperatur, relative Feuchte, Taupunkt und Luftdruck.",
-            
-            // [10] Sensor 2
-            10: "<b>Sensor 2 (Außen)</b><br>Sekundärer Umgebungssensor für thermodynamischen Bypass-Schutz und Zuluft-Kompensation.",
-            
-            // [11] TSL2561 (1)
-            11: "<b>Lichtsensor 1</b><br>Digitaler Helligkeitssensor (TSL2561) zur Erfassung von Lux, Breitband- und Infrarot-Lichtspektrum.",
-            
-            // [12] TSL2561 (2)
-            12: "<b>Lichtsensor 2</b><br>Sekundärer digitaler Helligkeitssensor zur redundanten Lichtüberwachung.",
-            
-            // [13] System Status & Konsolen
-            13: "<b>System Status &amp; Konsolen</b><br>Diagnose-Übersicht mit IP-Adresse, Display-Modus, RSSI-Signalstärke, 4h-Signalverlauf sowie Live-Terminal-Konsolen für lokale System-Logs und remote ESP-NOW Logs.",
-
-            // [20] Grow Advisor & Live Ticker (Grow-Bro Disclaimer)
-            20: "<b>Grow Advisor &amp; Live Ticker</b><br>Dies sind unverbindliche Tipps &amp; Denkanstöße – nimm sie bitte nicht zu bierernst! Die Automatik regelt so gut es geht, aber kein Algorithmus kann dein gärtnerisches Feingefühl ersetzen. Jeder Grow, jedes Zelt und jedes Raumklima ist anders. Sieh die Tipps nicht als Panik-Alarm, sondern als Anregung zum Mitdenken und selber Recherchieren. Keine Gewähr auf dynamische Tipps – Happy Growing! 🌿✌️"
+        const i18n = {
+            de: {
+                advisor_title: "Grow Advisor &amp; Live Ticker",
+                advisor_popup_title: "ADVISOR VOLLTEXT",
+                advisor_older: "◀ Älter",
+                advisor_newer: "Neuer ▶",
+                advisor_ready: "🟢 SYSTEMBEREIT",
+                advisor_ready_text: "Smart Live Advisor Engine bereit. Analysiere thermodynamische Klimadaten...",
+                dry_strategy: "Dry Strategy",
+                hygro_limit: "Hygro Limit (Schimmelschutz):",
+                rh_calc_soll: "RH calculated soll:",
+                potentiometer: "Potentiometer",
+                target_hum: "Sollwert Feuchte (A):",
+                gain_factor: "Gain Faktor (B):",
+                rotor_offset: "Rotor-Offset (C):",
+                rotor_servo: "Rotor &amp; Servo",
+                rotor_pos: "Rotor Stellung:",
+                hist_rotor: "60m Verlauf (Rotor Öffnung)",
+                purge_timer: "⏳ Stoßlüftungs-Timer",
+                purge_interval: "Intervall:",
+                purge_duration: "Dauer:",
+                temp: "Temperatur:",
+                hum: "Feuchtigkeit:",
+                dewpoint: "Taupunkt:",
+                pressure: "Luftdruck:",
+                brightness: "Helligkeit:",
+                broadband: "Breitband:",
+                infrared: "Infrarot:",
+                hist_temp: "60m Verlauf (Temperatur)",
+                hist_hum: "60m Verlauf (Luftfeuchtigkeit)",
+                hist_lux: "60m Verlauf (Helligkeit)",
+                vpd_card_title: "VPD (Sättigungsdefizit)",
+                vpd_indoor: "VPD Innen (BME280):",
+                vpd_outdoor: "VPD Außen (SHT31):",
+                hist_vpd_in: "60m Verlauf (VPD Innen)",
+                hist_vpd_out: "60m Verlauf (VPD Außen)",
+                espnow_title: "ESPNOW",
+                espnow_role: "Rolle:",
+                espnow_conn: "Verbindung:",
+                espnow_proto: "Protokoll:",
+                espnow_hist: "60m Verbindungsausfälle",
+                mqtt_title: "MQTT Dashboard",
+                mqtt_broker: "Broker:",
+                mqtt_status: "Status:",
+                mqtt_topic: "Topic:",
+                mqtt_hist: "60m Broker Ausfälle",
+                login_title: "Webinterface geschützt",
+                login_desc: "Für erweiterte Log-Konsolen &amp; Einstellungen bitte Anmelden:",
+                login_btn: "Anmelden",
+                login_err: "Passwort falsch!",
+                sys_status: "System Status",
+                ip_addr: "IP-Adresse:",
+                disp_mode: "Anzeige-Modus:",
+                rssi_signal: "Signalstärke RSSI:",
+                hist_rssi: "4h Verlauf (WLAN RSSI Signal)",
+                filter: "Filter:",
+                settings: "Einstellungen",
+                modal_zoom_title: "Verlauf (24h Zoom)",
+                modal_tooltip: "Tippe oder fahre über eine Kerze für Details...",
+                modal_close: "Schließen",
+                vpd_modal_hold: "Zum Bestätigen Button 2 Sekunden gedrückt halten:",
+                vpd_modal_cancel: "Abbrechen",
+                vpd_modal_holding: "Gedrückt halten...",
+                reboot_title: "Remote Reboot ausgelöst!",
+                reboot_desc: "Dieses Gerät wurde aus der Ferne von deinem gekoppelten Partner-Gerät per ESP-NOW neugestartet.",
+                reboot_close: "Verstanden / Schließen",
+                reset_title: "Werkseinstellungen geladen",
+                reset_desc: "Das Gerät wurde zurückgesetzt und befindet sich im <b>Einrichtungs-Modus</b> (Access Point).",
+                reset_steps_title: "Schritte zur Wiederherstellung:",
+                reset_step_1: "1. Verbinde dich mit dem WLAN <b>iDRY26-Setup</b>",
+                reset_step_2: "2. Öffne im Browser <b>http://192.168.4.1</b>",
+                reset_step_3: "3. WLAN/MQTT eintragen &amp; speichern.",
+                reset_note: "Hinweis: Standard-Modus ist auf <b>60/60 Blind-Betrieb</b> voreingestellt.",
+                reset_close: "Verstanden / Schließen",
+                days: ["Tag 1", "Tag 2", "Tag 3", "Tag 4", "Tag 5", "Tag 6", "Tag 7", "Tag 8", "Tag 9", "Tag 10", "Tag 11 (~Curing)", "Tag 12 (~Curing)", "Tag 13 (~Curing)", "Tag 14 (~Curing)"]
+            },
+            en: {
+                advisor_title: "Grow Advisor &amp; Live Ticker",
+                advisor_popup_title: "ADVISOR FULL TEXT",
+                advisor_older: "◀ Older",
+                advisor_newer: "Newer ▶",
+                advisor_ready: "🟢 SYSTEM READY",
+                advisor_ready_text: "Smart Live Advisor Engine ready. Analyzing thermodynamic climate data...",
+                dry_strategy: "Dry Strategy",
+                hygro_limit: "Hygro Limit (Mold Defense):",
+                rh_calc_soll: "Calculated Target RH:",
+                potentiometer: "Potentiometer",
+                target_hum: "Target Humidity (A):",
+                gain_factor: "Gain Factor (B):",
+                rotor_offset: "Rotor Offset (C):",
+                rotor_servo: "Rotor &amp; Servo",
+                rotor_pos: "Rotor Position:",
+                hist_rotor: "60m History (Rotor Opening)",
+                purge_timer: "⏳ Purge Ventilation Timer",
+                purge_interval: "Interval:",
+                purge_duration: "Duration:",
+                temp: "Temperature:",
+                hum: "Humidity:",
+                dewpoint: "Dew Point:",
+                pressure: "Barometric Pressure:",
+                brightness: "Brightness:",
+                broadband: "Broadband:",
+                infrared: "Infrared:",
+                hist_temp: "60m History (Temperature)",
+                hist_hum: "60m History (Humidity)",
+                hist_lux: "60m History (Brightness)",
+                vpd_card_title: "VPD (Vapor Pressure Deficit)",
+                vpd_indoor: "Indoor VPD (BME280):",
+                vpd_outdoor: "Outdoor VPD (SHT31):",
+                hist_vpd_in: "60m History (Indoor VPD)",
+                hist_vpd_out: "60m History (Outdoor VPD)",
+                espnow_title: "ESPNOW",
+                espnow_role: "Role:",
+                espnow_conn: "Connection:",
+                espnow_proto: "Protocol:",
+                espnow_hist: "60m Connection Loss",
+                mqtt_title: "MQTT Dashboard",
+                mqtt_broker: "Broker:",
+                mqtt_status: "Status:",
+                mqtt_topic: "Topic:",
+                mqtt_hist: "60m Broker Loss",
+                login_title: "Protected Web Interface",
+                login_desc: "Please log in for extended terminal consoles &amp; settings:",
+                login_btn: "Login",
+                login_err: "Incorrect password!",
+                sys_status: "System Status",
+                ip_addr: "IP Address:",
+                disp_mode: "Display Mode:",
+                rssi_signal: "Signal Strength RSSI:",
+                hist_rssi: "4h History (WiFi RSSI Signal)",
+                filter: "Filter:",
+                settings: "Settings",
+                modal_zoom_title: "History (24h Zoom)",
+                modal_tooltip: "Tap or hover over a candle for details...",
+                modal_close: "Close",
+                vpd_modal_hold: "Hold button for 2 seconds to confirm:",
+                vpd_modal_cancel: "Cancel",
+                vpd_modal_holding: "Keep holding...",
+                reboot_title: "Remote Reboot Triggered!",
+                reboot_desc: "This device was remotely rebooted by your paired partner device over ESP-NOW.",
+                reboot_close: "Understood / Close",
+                reset_title: "Factory Defaults Restored",
+                reset_desc: "The device has been reset and is currently in <b>Setup Mode</b> (Access Point).",
+                reset_steps_title: "Steps to reconnect:",
+                reset_step_1: "1. Connect to Wi-Fi <b>iDRY26-Setup</b>",
+                reset_step_2: "2. Open in browser <b>http://192.168.4.1</b>",
+                reset_step_3: "3. Enter Wi-Fi / MQTT credentials &amp; save.",
+                reset_note: "Note: Default mode is preset to <b>60/60 blind operation</b>.",
+                reset_close: "Understood / Close",
+                days: ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7", "Day 8", "Day 9", "Day 10", "Day 11 (~Curing)", "Day 12 (~Curing)", "Day 13 (~Curing)", "Day 14 (~Curing)"]
+            }
         };
+
+        const PANEL_INFOS_I18N = {
+            de: {
+                0: "<b>Dry Strategy</b><br>Wahl der Trocknungsstrategie: Klassischer 60/60 Modus (60°F / 60% rF), dynamischer VPD Modus oder automatisierter 14-Tage VPD AUTO Stufenplan.",
+                1: "<b>VPD AUTO Modus</b><br>Wissenschaftlicher 21x14 Matrix-Stufenplan mit temperaturkompensiertem VPD-Sollwertverlauf über 14 Tage inklusive Schimmelschutz.",
+                2: "<b>Hygro-Limit Schimmelschutz</b><br>Sicherheits-Obergrenze für die relative Zielfeuchte (70%, 75% oder 80%), um Schimmelbildung in feuchten Umgebungen rigoros zu verhindern.",
+                3: "<b>Potentiometer</b><br>Analoge Hardware-Regler für Sollwert-Feuchte A (inkl. Rigoros ZU/AUF Schalter), Regelverstärkung B (Gain 0-400%) und virtuellen 0°-Kalibrierungs-Offset C.",
+                4: "<b>Rotor &amp; Servo</b><br>Echtzeit-Stellungsanzeige des Lüftungsrotors (0-100%) mit animierter Mondphasen-Visualisierung und 60-Minuten-Verlaufshistorie.",
+                5: "<b>Stoßlüftungs-Timer</b><br>Periodische Zwangsbelüftung mit animierter Sanduhr und 3D-Walzenwählern für Intervall (10m-24h) und Öffnungsdauer (10s-10m).",
+                6: "<b>ESP-NOW Funkverbindung</b><br>Drahtlose Echtzeit-Synchronisation zwischen Master und Slave-Geräten mit Link-Monitoring und Ausfall-Historie.",
+                7: "<b>MQTT Dashboard</b><br>Status der Anbindung an Home Assistant / MQTT-Broker mit Verbindungs-Historie und Telemetrie-Topics.",
+                8: "<b>VPD (Dampfdruckdefizit)</b><br>Berechnetes Sättigungsdefizit der Innen- und Außenluft in kPa zur präzisen Steuerung des Transpirationsdrucks.",
+                9: "<b>Sensor 1 (Innen)</b><br>Primärer Klimasensor (BME280 / SHT3x) für Temperatur, relative Feuchte, Taupunkt und Luftdruck.",
+                10: "<b>Sensor 2 (Außen)</b><br>Sekundärer Umgebungssensor für thermodynamischen Bypass-Schutz und Zuluft-Kompensation.",
+                11: "<b>Lichtsensor 1</b><br>Digitaler Helligkeitssensor (TSL2561) zur Erfassung von Lux, Breitband- und Infrarot-Lichtspektrum.",
+                12: "<b>Lichtsensor 2</b><br>Sekundärer digitaler Helligkeitssensor zur redundanten Lichtüberwachung.",
+                13: "<b>System Status &amp; Konsolen</b><br>Diagnose-Übersicht mit IP-Adresse, Display-Modus, RSSI-Signalstärke, 4h-Signalverlauf sowie Live-Terminal-Konsolen für lokale System-Logs und remote ESP-NOW Logs.",
+                20: "<b>Grow Advisor &amp; Live Ticker</b><br>Dies sind unverbindliche Tipps &amp; Denkanstöße – nimm sie bitte nicht zu bierernst! Die Automatik regelt so gut es geht, aber kein Algorithmus kann dein gärtnerisches Feingefühl ersetzen. Jeder Grow, jedes Zelt und jedes Raumklima ist anders. Sieh die Tipps nicht als Panik-Alarm, sondern als Anregung zum Mitdenken und selber Recherchieren. Keine Gewähr auf dynamische Tipps – Happy Growing! 🌿✌️"
+            },
+            en: {
+                0: "<b>Dry Strategy</b><br>Select your drying strategy: Classic 60/60 Mode (60°F / 60% RH), dynamic VPD Mode, or automated 14-day VPD AUTO graduated stage schedule.",
+                1: "<b>VPD AUTO Mode</b><br>Scientific 21x14 matrix stage schedule featuring temperature-compensated VPD target curves across 14 days with integrated mold defense.",
+                2: "<b>Hygro-Limit Mold Defense</b><br>Safety ceiling for target relative humidity (70%, 75%, or 80%) to rigorously prevent mold in humid ambient conditions.",
+                3: "<b>Potentiometers</b><br>Analog hardware dials for target humidity A (incl. strict CLOSE/OPEN switches), control gain B (0-400%), and virtual 0° calibration offset C.",
+                4: "<b>Rotor &amp; Servo</b><br>Real-time ventilation rotor position (0-100%) with animated moon phase visualization and 60-minute history graph.",
+                5: "<b>Purge Ventilation Timer</b><br>Periodic forced ventilation with animated hourglass and 3D drum pickers for interval (10m-24h) and open duration (10s-10m).",
+                6: "<b>ESP-NOW Wireless Link</b><br>Real-time wireless synchronization between Master and Slave units with link monitoring and disconnect history.",
+                7: "<b>MQTT Dashboard</b><br>Home Assistant / MQTT broker integration state with connection history and telemetry topics.",
+                8: "<b>VPD (Vapor Pressure Deficit)</b><br>Calculated saturation deficit of indoor and outdoor air in kPa for precise transpiration pressure management.",
+                9: "<b>Sensor 1 (Indoor)</b><br>Primary environmental sensor (BME280 / SHT3x) for temperature, relative humidity, dew point, and barometric pressure.",
+                10: "<b>Sensor 2 (Outdoor)</b><br>Secondary ambient sensor for thermodynamic bypass protection and intake air compensation.",
+                11: "<b>Light Sensor 1</b><br>Digital illuminance sensor (TSL2561) tracking Lux, broadband, and infrared spectrums.",
+                12: "<b>Light Sensor 2</b><br>Secondary digital illuminance sensor for redundant light monitoring.",
+                13: "<b>System Status &amp; Consoles</b><br>Diagnostic overview with IP address, display mode, RSSI signal strength, 4h signal history, and live terminal consoles for local system logs and remote ESP-NOW logs.",
+                20: "<b>Grow Advisor &amp; Live Ticker</b><br>These are non-binding tips &amp; thought starters – please don't take them as absolute dogma! The automation regulates as best as possible, but no algorithm can replace your grower intuition. Every grow, tent, and room climate is unique. View these tips as friendly prompts to reflect and research, not panic alerts. No liability for dynamic advice – Happy Growing! 🌿✌️"
+            }
+        };
+
+        let currentLang = localStorage.getItem('idry_lang') || 'de';
+
+        function setLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem('idry_lang', lang);
+            localStorage.setItem('idry_lang_user_set', '1');
+
+            const btnDe = document.getElementById('lang-btn-de');
+            const btnEn = document.getElementById('lang-btn-en');
+            if (btnDe) btnDe.classList.toggle('active', lang === 'de');
+            if (btnEn) btnEn.classList.toggle('active', lang === 'en');
+
+            const dict = i18n[lang] || i18n.de;
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (dict[key]) {
+                    el.innerHTML = dict[key];
+                }
+            });
+
+            const daySelect = document.getElementById('vpd-auto-day-select');
+            if (daySelect && dict.days) {
+                const currVal = daySelect.value;
+                daySelect.innerHTML = dict.days.map((lbl, i) => '<option value="' + (i + 1) + '">' + lbl + '</option>').join('');
+                daySelect.value = currVal;
+            }
+
+            renderAdvisorMsg(advisorCurrentIdx);
+            if (typeof updateData === 'function' && typeof latestData !== 'undefined' && latestData) {
+                updateData();
+            }
+
+            // Sync language preference with ESP32 Flash (persisted if authenticated)
+            fetch('/api/set_language?lang=' + encodeURIComponent(lang), { method: 'POST' }).catch(() => {});
+        }
 
         let activeBubble = null;
         let activeBubbleBtn = null;
 
         function showInfo(btn, idx) {
             hideInfo();
-            if (!PANEL_INFOS[idx]) return;
+            const infos = PANEL_INFOS_I18N[currentLang] || PANEL_INFOS_I18N.de;
+            if (!infos[idx]) return;
             const bubble = document.createElement('div');
             bubble.className = 'info-bubble';
-            bubble.innerHTML = PANEL_INFOS[idx];
+            bubble.innerHTML = infos[idx];
             btn.parentElement.appendChild(bubble);
             btn.classList.add('active');
             activeBubble = bubble;
@@ -3452,9 +3703,11 @@ void handlePortalRoot() {
             {
                 type: 'optimal',
                 badgeClass: 'badge-optimal',
-                badgeText: '🟢 SYSTEMBEREIT',
+                badgeDe: '🟢 SYSTEMBEREIT',
+                badgeEn: '🟢 SYSTEM READY',
                 timeStr: '[00:00:00]',
-                rawText: 'Smart Live Advisor Engine bereit. Analysiere thermodynamische Klimadaten...'
+                textDe: 'Smart Live Advisor Engine bereit. Analysiere thermodynamische Klimadaten...',
+                textEn: 'Smart Live Advisor Engine ready. Analyzing thermodynamic climate data...'
             }
         ];
         let advisorCurrentIdx = 0;
@@ -3467,21 +3720,23 @@ void handlePortalRoot() {
         let lastAdvisorEvalTime = 0;
         let pressureHistory = []; // { time, press } for barometer 3h slope
 
-        function pushAdvisorMsg(type, badgeClass, badgeText, msgText) {
+        function pushAdvisorMsg(type, badgeClass, badgeDe, badgeEn, textDe, textEn) {
             const now = new Date();
             const timeStr = "[" + String(now.getHours()).padStart(2,'0') + ":" + String(now.getMinutes()).padStart(2,'0') + ":" + String(now.getSeconds()).padStart(2,'0') + "]";
             
             // Deduplication: Only append if NOT identical to the latest report in ringbuffer
-            if (advisorRingBuffer.length > 0 && advisorRingBuffer[0].rawText === msgText) {
+            if (advisorRingBuffer.length > 0 && advisorRingBuffer[0].textDe === textDe) {
                 return;
             }
 
             const item = {
                 type: type,
                 badgeClass: badgeClass,
-                badgeText: badgeText,
+                badgeDe: badgeDe,
+                badgeEn: badgeEn,
                 timeStr: timeStr,
-                rawText: msgText
+                textDe: textDe,
+                textEn: textEn
             };
 
             advisorRingBuffer.unshift(item);
@@ -3489,7 +3744,6 @@ void handlePortalRoot() {
                 advisorRingBuffer.pop();
             }
 
-            // If user is viewing the latest live message (idx 0), render and start continuous scroll
             if (advisorCurrentIdx === 0) {
                 renderAdvisorMsg(0);
             } else {
@@ -3508,9 +3762,12 @@ void handlePortalRoot() {
             if (advisorScrollAnim) cancelAnimationFrame(advisorScrollAnim);
             if (advisorDwellTimer) clearTimeout(advisorDwellTimer);
 
-            track.innerHTML = '<span class="advisor-badge ' + item.badgeClass + '">' + item.badgeText + '</span>' +
+            const bText = (currentLang === 'en' ? item.badgeEn : item.badgeDe) || item.badgeDe || '';
+            const mText = (currentLang === 'en' ? item.textEn : item.textDe) || item.textDe || '';
+
+            track.innerHTML = '<span class="advisor-badge ' + item.badgeClass + '">' + bText + '</span>' +
                               '<span class="advisor-time">' + item.timeStr + '</span>' +
-                              '<span class="advisor-msg-text">' + item.rawText + '</span>';
+                              '<span class="advisor-msg-text">' + mText + '</span>';
 
             updateAdvisorCounter();
 
@@ -3576,8 +3833,6 @@ void handlePortalRoot() {
             const popupCounter = document.getElementById('advisor-popup-counter');
             if (popupCounter) popupCounter.innerText = current + " / " + total;
 
-            // Boundary Visibility:
-            // "Neuer" (next) button: only visible if currentIdx > 0 (can go newer)
             const showNext = advisorCurrentIdx > 0;
             const nextBtn = document.getElementById('advisor-next-btn');
             if (nextBtn) nextBtn.style.visibility = showNext ? 'visible' : 'hidden';
@@ -3585,7 +3840,6 @@ void handlePortalRoot() {
             const popupNextBtn = document.getElementById('advisor-popup-next-btn');
             if (popupNextBtn) popupNextBtn.style.visibility = showNext ? 'visible' : 'hidden';
 
-            // "Älter" (prev) button: only visible if currentIdx < total - 1 (can go older)
             const showPrev = advisorCurrentIdx < total - 1;
             const prevBtn = document.getElementById('advisor-prev-btn');
             if (prevBtn) prevBtn.style.visibility = showPrev ? 'visible' : 'hidden';
@@ -3624,16 +3878,15 @@ void handlePortalRoot() {
             const diffY = endY - dragStartY;
 
             if (Math.abs(diffX) <= 6 && Math.abs(diffY) <= 6) {
-                // User clicked/tapped without moving -> Open Full-Text Speech Bubble!
                 openAdvisorPopup(advisorCurrentIdx);
                 return;
             }
 
             if (Math.abs(diffX) > 35) {
                 if (diffX > 0) {
-                    prevAdvisorMsg(); // Swiped right -> older
+                    prevAdvisorMsg();
                 } else {
-                    nextAdvisorMsg(); // Swiped left -> newer
+                    nextAdvisorMsg();
                 }
             }
             setTimeout(resumeAdvisorTicker, 1500);
@@ -3648,11 +3901,14 @@ void handlePortalRoot() {
             if (!popup || !content) return;
 
             pauseAdvisorTicker();
+            const bText = (currentLang === 'en' ? item.badgeEn : item.badgeDe) || item.badgeDe || '';
+            const mText = (currentLang === 'en' ? item.textEn : item.textDe) || item.textDe || '';
+
             content.innerHTML = '<div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">' +
-                                '<span class="advisor-badge ' + item.badgeClass + '">' + item.badgeText + '</span>' +
+                                '<span class="advisor-badge ' + item.badgeClass + '">' + bText + '</span>' +
                                 '<span class="advisor-time">' + item.timeStr + '</span>' +
                                 '</div>' +
-                                '<div style="font-size:13.5px; color:#f8fafc; font-weight:500; line-height:1.5;">' + item.rawText + '</div>';
+                                '<div style="font-size:13.5px; color:#f8fafc; font-weight:500; line-height:1.5;">' + mText + '</div>';
 
             popup.style.display = 'block';
             updateAdvisorCounter();
@@ -3741,7 +3997,9 @@ void handlePortalRoot() {
 
             // A. Active Stoßlüftung Notification
             if (purgeActive) {
-                pushAdvisorMsg('event', 'badge-system', '🟣 STOSSLÜFTUNG', 'Stoßlüftung aktiv: Klappe 100% geöffnet. Zelt wird intensiv mit Frischluft gespült.');
+                pushAdvisorMsg('event', 'badge-system', '🟣 STOSSLÜFTUNG', '🟣 PURGE ACTIVE',
+                               'Stoßlüftung aktiv: Klappe 100% geöffnet. Zelt wird intensiv mit Frischluft gespült.',
+                               'Purge ventilation active: Flap 100% open. Grow space is being thoroughly flushed with fresh air.');
                 return;
             }
 
@@ -3749,59 +4007,93 @@ void handlePortalRoot() {
             if (tempIn !== null && tempOut !== null && humIn !== null) {
                 const deltaT = Math.round(tempIn - tempOut);
                 if (deltaT >= 3 && rHumIn >= 65) {
-                    pushAdvisorMsg('alert', 'badge-alert', '🔴 KONDENSATION', 'Kondensationsrisiko: Zeltwand kühlt von außen stark ab (ΔT ' + deltaT + '°C, Innenfeuchte ' + rHumIn + '% rF). Umluft auf Zeltwände/Boden richten oder Vorraum heizen!');
+                    pushAdvisorMsg('alert', 'badge-alert', '🔴 KONDENSATION', '🔴 CONDENSATION',
+                                   'Kondensationsrisiko: Zeltwand kühlt von außen stark ab (ΔT ' + deltaT + '°C, Innenfeuchte ' + rHumIn + '% rF). Umluft auf Zeltwände/Boden richten oder Vorraum heizen!',
+                                   'Condensation risk: Tent walls cooling rapidly from outside (ΔT ' + deltaT + '°C, Indoor humidity ' + rHumIn + '% RH). Direct air circulation towards tent walls/floor or heat lung room!');
                     return;
                 }
             }
 
             // C. Barometric Trend Alerts
             if (pressSlope <= -2) {
-                pushAdvisorMsg('weather', 'badge-weather', '🔵 TIEFDRUCKFRONT', 'Barometer fällt (' + pressSlope + ' hPa/3h). Regen/steigende Außenfeuchte im Anmarsch – Entfeuchter im Vorraum bereithalten.');
+                pushAdvisorMsg('weather', 'badge-weather', '🔵 TIEFDRUCKFRONT', '🔵 LOW PRESSURE FRONT',
+                               'Barometer fällt (' + pressSlope + ' hPa/3h). Regen/steigende Außenfeuchte im Anmarsch – Entfeuchter im Vorraum bereithalten.',
+                               'Barometer falling (' + pressSlope + ' hPa/3h). Rain / rising ambient humidity incoming – keep dehumidifier ready in lung room.');
             } else if (pressSlope >= 2) {
-                pushAdvisorMsg('weather', 'badge-weather', '🔵 HOCHDRUCKWETTER', 'Barometer steigt (+' + pressSlope + ' hPa/3h). Trockene Witterung zieht auf – Übertrocknung im Auge behalten.');
+                pushAdvisorMsg('weather', 'badge-weather', '🔵 HOCHDRUCKWETTER', '🔵 HIGH PRESSURE WEATHER',
+                               'Barometer steigt (+' + pressSlope + ' hPa/3h). Trockene Witterung zieht auf – Übertrocknung im Auge behalten.',
+                               'Barometer rising (+' + pressSlope + ' hPa/3h). Dry weather setting in – keep an eye on over-drying.');
             }
 
             // --- Priority 2: Strategy-Specific Climate Diagnostics & Tips ---
 
             if (dryStrat === 2) { // === VPD AUTO MODE ===
                 if (rVpdIn !== null) {
-                    let stageText = "";
-                    if (vpdAutoDay <= 3) stageText = "Tag " + vpdAutoDay + "/14 (Frische Ernte): Hoher Feuchteabtrag. Klappe federt Spitzen ab.";
-                    else if (vpdAutoDay <= 10) stageText = "Tag " + vpdAutoDay + "/14 (Curing-Phase): Gleichmäßiger Feuchteabbau im Zielkorridor.";
-                    else stageText = "Tag " + vpdAutoDay + "/14 (Ziellandung): Stängel-Knicktest durchführen (knackt der Stängel, ist die Ernte perfekt trocken!).";
+                    let stageTextDe = "";
+                    let stageTextEn = "";
+                    if (vpdAutoDay <= 3) {
+                        stageTextDe = "Tag " + vpdAutoDay + "/14 (Frische Ernte): Hoher Feuchteabtrag. Klappe federt Spitzen ab.";
+                        stageTextEn = "Day " + vpdAutoDay + "/14 (Fresh Harvest): High moisture release. Flap dampens humidity peaks.";
+                    } else if (vpdAutoDay <= 10) {
+                        stageTextDe = "Tag " + vpdAutoDay + "/14 (Curing-Phase): Gleichmäßiger Feuchteabbau im Zielkorridor.";
+                        stageTextEn = "Day " + vpdAutoDay + "/14 (Curing Phase): Smooth moisture reduction within target corridor.";
+                    } else {
+                        stageTextDe = "Tag " + vpdAutoDay + "/14 (Ziellandung): Stängel-Knicktest durchführen (knackt der Stängel, ist die Ernte perfekt trocken!).";
+                        stageTextEn = "Day " + vpdAutoDay + "/14 (Touchdown): Perform branch snap test (if the stem snaps cleanly, the harvest is dried to perfection!).";
+                    }
 
                     if (vpdIn < 0.55 || (humIn && humIn >= hygroLimit)) {
                         if (rHumOut !== null && rHumOut < 58) {
-                            pushAdvisorMsg('alert', 'badge-alert', '🔴 SCHIMMELSCHUTZ', 'VPD AUTO ' + stageText + ' – Warnung: Ist-VPD ' + rVpdIn + ' kPa zu niedrig (Soll: ' + rVpdTarget + ' kPa, Feuchte: ' + (rHumIn !== null ? rHumIn : '--') + '% rF). Lüftung erhöhen, um trockenere Außenluft nachzuziehen.');
+                            pushAdvisorMsg('alert', 'badge-alert', '🔴 SCHIMMELSCHUTZ', '🔴 MOLD DEFENSE',
+                                           'VPD AUTO ' + stageTextDe + ' – Warnung: Ist-VPD ' + rVpdIn + ' kPa zu niedrig (Soll: ' + rVpdTarget + ' kPa, Feuchte: ' + (rHumIn !== null ? rHumIn : '--') + '% rF). Lüftung erhöhen, um trockenere Außenluft nachzuziehen.',
+                                           'VPD AUTO ' + stageTextEn + ' – Warning: Live VPD ' + rVpdIn + ' kPa too low (Target: ' + rVpdTarget + ' kPa, Humidity: ' + (rHumIn !== null ? rHumIn : '--') + '% RH). Increase ventilation to draw in drier intake air.');
                         } else {
-                            pushAdvisorMsg('alert', 'badge-alert', '🔴 SCHIMMELSCHUTZ', 'VPD AUTO ' + stageText + ' – Warnung: Ist-VPD ' + rVpdIn + ' kPa zu niedrig. Außenluft ebenfalls feucht: Vorraum um 1–2°C heizen oder Entfeuchter einschalten!');
+                            pushAdvisorMsg('alert', 'badge-alert', '🔴 SCHIMMELSCHUTZ', '🔴 MOLD DEFENSE',
+                                           'VPD AUTO ' + stageTextDe + ' – Warnung: Ist-VPD ' + rVpdIn + ' kPa zu niedrig. Außenluft ebenfalls feucht: Vorraum um 1–2°C heizen oder Entfeuchter einschalten!',
+                                           'VPD AUTO ' + stageTextEn + ' – Warning: Live VPD ' + rVpdIn + ' kPa too low. Outdoor air also humid: Warm lung room by 1-2°C or start dehumidifier!');
                         }
                     } else if (vpdIn > 1.30) {
                         if (rHumOut !== null && rHumOut > (rHumIn || 50)) {
-                            pushAdvisorMsg('tip', 'badge-tip', '🟡 HEUGERUCH-GEFAHR', 'VPD AUTO ' + stageText + ' – Tipp: Ist-VPD ' + rVpdIn + ' kPa zu hoch (Soll: ' + rVpdTarget + ' kPa). Trocknung zu aggressiv! Klappe weiter schließen, um Feuchte im Zelt zu halten.');
+                            pushAdvisorMsg('tip', 'badge-tip', '🟡 HEUGERUCH-GEFAHR', '🟡 HAY ODOR RISK',
+                                           'VPD AUTO ' + stageTextDe + ' – Tipp: Ist-VPD ' + rVpdIn + ' kPa zu hoch (Soll: ' + rVpdTarget + ' kPa). Trocknung zu aggressiv! Klappe weiter schließen, um Feuchte im Zelt zu halten.',
+                                           'VPD AUTO ' + stageTextEn + ' – Tip: Live VPD ' + rVpdIn + ' kPa too high (Target: ' + rVpdTarget + ' kPa). Drying too aggressive! Throttle flap to retain moisture in tent.');
                         } else {
-                            pushAdvisorMsg('tip', 'badge-tip', '🟡 TROCKENE ZULUFT', 'VPD AUTO ' + stageText + ' – Tipp: Ist-VPD ' + rVpdIn + ' kPa zu hoch. Trockene Zuluft: Nasses Handtuch oder Wasserschale vor Bodenventilator platzieren (Umluft NIE direkt auf Blüten!).');
+                            pushAdvisorMsg('tip', 'badge-tip', '🟡 TROCKENE ZULUFT', '🟡 DRY INTAKE AIR',
+                                           'VPD AUTO ' + stageTextDe + ' – Tipp: Ist-VPD ' + rVpdIn + ' kPa zu hoch. Trockene Zuluft: Nasses Handtuch oder Wasserschale vor Bodenventilator platzieren (Umluft NIE direkt auf Blüten!).',
+                                           'VPD AUTO ' + stageTextEn + ' – Tip: Live VPD ' + rVpdIn + ' kPa too high. Dry intake air: Place damp towel or water dish in front of floor fan (never blow air directly on flowers!).');
                         }
                     } else {
-                        pushAdvisorMsg('optimal', 'badge-optimal', '🟢 VPD AUTO OPTIMAL', 'VPD AUTO ' + stageText + ' – Perfekt: Ist-VPD ' + rVpdIn + ' kPa liegt exakt am Stufenplan-Zielwert (' + rVpdTarget + ' kPa, Klappe: ' + rotorPos + '%).');
+                        pushAdvisorMsg('optimal', 'badge-optimal', '🟢 VPD AUTO OPTIMAL', '🟢 VPD AUTO OPTIMAL',
+                                       'VPD AUTO ' + stageTextDe + ' – Perfekt: Ist-VPD ' + rVpdIn + ' kPa liegt exakt am Stufenplan-Zielwert (' + rVpdTarget + ' kPa, Klappe: ' + rotorPos + '%).',
+                                       'VPD AUTO ' + stageTextEn + ' – Perfect: Live VPD ' + rVpdIn + ' kPa matches target schedule precisely (' + rVpdTarget + ' kPa, Flap: ' + rotorPos + '%).');
                     }
                 }
             } else if (dryStrat === 1) { // === MANUAL VPD MODE ===
                 if (rVpdIn !== null) {
                     if (vpdIn < 0.55 || (humIn && humIn >= hygroLimit)) {
                         if (rHumOut !== null && rHumOut < 58) {
-                            pushAdvisorMsg('alert', 'badge-alert', '🔴 SCHIMMELSCHUTZ', 'VPD Modus: Ist-VPD ' + rVpdIn + ' kPa zu niedrig (Soll: ' + rVpdTarget + ' kPa / ' + (rHumIn !== null ? rHumIn : '--') + '% rF). Schimmelrisiko: Klappe/Abluft erhöhen, um trockenere Außenluft einzusaugen.');
+                            pushAdvisorMsg('alert', 'badge-alert', '🔴 SCHIMMELSCHUTZ', '🔴 MOLD DEFENSE',
+                                           'VPD Modus: Ist-VPD ' + rVpdIn + ' kPa zu niedrig (Soll: ' + rVpdTarget + ' kPa / ' + (rHumIn !== null ? rHumIn : '--') + '% rF). Schimmelrisiko: Klappe/Abluft erhöhen, um trockenere Außenluft einzusaugen.',
+                                           'VPD Mode: Live VPD ' + rVpdIn + ' kPa too low (Target: ' + rVpdTarget + ' kPa / ' + (rHumIn !== null ? rHumIn : '--') + '% RH). Mold risk: Increase ventilation to draw in drier outdoor air.');
                         } else {
-                            pushAdvisorMsg('alert', 'badge-alert', '🔴 RAUMKLIMA', 'VPD Modus: Ist-VPD ' + rVpdIn + ' kPa zu niedrig. Außenluft ebenfalls feucht: Vorraum um +1–2°C erwärmen (senkt rF) oder Raumentfeuchter zuschalten.');
+                            pushAdvisorMsg('alert', 'badge-alert', '🔴 RAUMKLIMA', '🔴 ROOM CLIMATE',
+                                           'VPD Modus: Ist-VPD ' + rVpdIn + ' kPa zu niedrig. Außenluft ebenfalls feucht: Vorraum um +1–2°C erwärmen (senkt rF) oder Raumentfeuchter zuschalten.',
+                                           'VPD Mode: Live VPD ' + rVpdIn + ' kPa too low. Outdoor air also humid: Warm lung room by +1-2°C (lowers RH) or run dehumidifier.');
                         }
                     } else if (vpdIn > 1.30) {
                         if (rHumOut !== null && rHumOut > (rHumIn || 50)) {
-                            pushAdvisorMsg('tip', 'badge-tip', '🟡 HEUGERUCH-GEFAHR', 'VPD Modus: Ist-VPD ' + rVpdIn + ' kPa zu hoch (Soll: ' + rVpdTarget + ' kPa). Zu rasche Austrocknung zerstört Terpene! Klappe drosseln.');
+                            pushAdvisorMsg('tip', 'badge-tip', '🟡 HEUGERUCH-GEFAHR', '🟡 HAY ODOR RISK',
+                                           'VPD Modus: Ist-VPD ' + rVpdIn + ' kPa zu hoch (Soll: ' + rVpdTarget + ' kPa). Zu rasche Austrocknung zerstört Terpene! Klappe drosseln.',
+                                           'VPD Mode: Live VPD ' + rVpdIn + ' kPa too high (Target: ' + rVpdTarget + ' kPa). Rapid over-drying degrades terpenes! Throttle ventilation flap.');
                         } else {
-                            pushAdvisorMsg('tip', 'badge-tip', '🟡 TROCKENE ZULUFT', 'VPD Modus: Ist-VPD ' + rVpdIn + ' kPa zu hoch. Sehr trockener Vorraum. DIY: Nasses Handtuch auf Zeltboden platzieren; Umluft nur indirekt strömen lassen.');
+                            pushAdvisorMsg('tip', 'badge-tip', '🟡 TROCKENE ZULUFT', '🟡 DRY INTAKE AIR',
+                                           'VPD Modus: Ist-VPD ' + rVpdIn + ' kPa zu hoch. Sehr trockener Vorraum. DIY: Nasses Handtuch auf Zeltboden platzieren; Umluft nur indirekt strömen lassen.',
+                                           'VPD Mode: Live VPD ' + rVpdIn + ' kPa too high. Dry lung room. DIY: Place damp towel on tent floor; ensure indirect air circulation.');
                         }
                     } else {
-                        pushAdvisorMsg('optimal', 'badge-optimal', '🟢 VPD OPTIMAL', 'VPD Modus: Transpirationsdruck bei ' + rVpdIn + ' kPa (Soll: ' + rVpdTarget + ' kPa) perfekt ausbalanciert. Blüten reifen gleichmäßig.');
+                        pushAdvisorMsg('optimal', 'badge-optimal', '🟢 VPD OPTIMAL', '🟢 VPD OPTIMAL',
+                                       'VPD Modus: Transpirationsdruck bei ' + rVpdIn + ' kPa (Soll: ' + rVpdTarget + ' kPa) perfekt ausbalanciert. Blüten reifen gleichmäßig.',
+                                       'VPD Mode: Transpiration pressure at ' + rVpdIn + ' kPa (Target: ' + rVpdTarget + ' kPa) perfectly balanced. Flowers maturing smoothly.');
                     }
                 }
             } else { // === 60/60 MODE ===
@@ -3811,14 +4103,22 @@ void handlePortalRoot() {
 
                     if (deltaRH >= 3 || rHumIn > 65) {
                         if (rHumOut !== null && rHumOut < (rHumIn - 3)) {
-                            pushAdvisorMsg('tip', 'badge-tip', '🟡 ENTLÜFTEN', '60/60 Modus: Feuchte bei ' + rHumIn + '% rF (Soll: ' + targetRH + '%, Δ +' + deltaRH + '%). Außenluft ist mit ' + rHumOut + '% rF trockener – Klappe weiter öffnen und Abluft steigern.');
+                            pushAdvisorMsg('tip', 'badge-tip', '🟡 ENTLÜFTEN', '🟡 VENTILATE',
+                                           '60/60 Modus: Feuchte bei ' + rHumIn + '% rF (Soll: ' + targetRH + '%, Δ +' + deltaRH + '%). Außenluft ist mit ' + rHumOut + '% rF trockener – Klappe weiter öffnen und Abluft steigern.',
+                                           '60/60 Mode: Humidity at ' + rHumIn + '% RH (Target: ' + targetRH + '%, Δ +' + deltaRH + '%). Intake air is drier at ' + rHumOut + '% RH – open flap further.');
                         } else {
-                            pushAdvisorMsg('tip', 'badge-tip', '🟡 RAUMKLIMA', '60/60 Modus: Feuchte bei ' + rHumIn + '% rF (Soll: ' + targetRH + '%, Δ +' + (deltaRH >= 0 ? '+' : '') + deltaRH + '%). Außenluft ebenfalls feucht (' + (rHumOut !== null ? rHumOut : '--') + '% rF)! Vorraum um 1–2°C heizen oder Entfeuchter starten.');
+                            pushAdvisorMsg('tip', 'badge-tip', '🟡 RAUMKLIMA', '🟡 ROOM CLIMATE',
+                                           '60/60 Modus: Feuchte bei ' + rHumIn + '% rF (Soll: ' + targetRH + '%, Δ +' + (deltaRH >= 0 ? '+' : '') + deltaRH + '%). Außenluft ebenfalls feucht (' + (rHumOut !== null ? rHumOut : '--') + '% rF)! Vorraum um 1–2°C heizen oder Entfeuchter starten.',
+                                           '60/60 Mode: Humidity at ' + rHumIn + '% RH (Target: ' + targetRH + '%, Δ +' + (deltaRH >= 0 ? '+' : '') + deltaRH + '%). Intake air also humid (' + (rHumOut !== null ? rHumOut : '--') + '% RH)! Warm lung room by 1-2°C or run dehumidifier.');
                         }
                     } else if (deltaRH <= -3 || rHumIn < 55) {
-                        pushAdvisorMsg('tip', 'badge-tip', '🟡 ZU TROCKEN', '60/60 Modus: Feuchte bei ' + rHumIn + '% rF (Soll: ' + targetRH + '%, Δ ' + deltaRH + '%). Gefahr von Heugeruch! Klappe drosseln; DIY-Tipp: Nasses Tuch oder Wasserschale auf Zeltboden stellen.');
+                        pushAdvisorMsg('tip', 'badge-tip', '🟡 ZU TROCKEN', '🟡 TOO DRY',
+                                       '60/60 Modus: Feuchte bei ' + rHumIn + '% rF (Soll: ' + targetRH + '%, Δ ' + deltaRH + '%). Gefahr von Heugeruch! Klappe drosseln; DIY-Tipp: Nasses Tuch oder Wasserschale auf Zeltboden stellen.',
+                                       '60/60 Mode: Humidity at ' + rHumIn + '% RH (Target: ' + targetRH + '%, Δ ' + deltaRH + '%). Risk of hay odor! Throttle flap; DIY tip: place damp towel on tent floor.');
                     } else {
-                        pushAdvisorMsg('optimal', 'badge-optimal', '🟢 60/60 OPTIMAL', '60/60 Modus: Feuchte bei ' + rHumIn + '% rF liegt perfekt im Zielkorridor (Soll: ' + targetRH + '% rF, Taupunkt: ' + (rDpIn !== null ? rDpIn : '--') + '°C). Reifung verläuft ideal.');
+                        pushAdvisorMsg('optimal', 'badge-optimal', '🟢 60/60 OPTIMAL', '🟢 60/60 OPTIMAL',
+                                       '60/60 Modus: Feuchte bei ' + rHumIn + '% rF liegt perfekt im Zielkorridor (Soll: ' + targetRH + '% rF, Taupunkt: ' + (rDpIn !== null ? rDpIn : '--') + '°C). Reifung verläuft ideal.',
+                                       '60/60 Mode: Humidity at ' + rHumIn + '% RH is right on target (Target: ' + targetRH + '% RH, Dew Point: ' + (rDpIn !== null ? rDpIn : '--') + '°C). Curing proceeds ideally.');
                     }
                 }
             }
@@ -4691,33 +4991,33 @@ void handlePortalRoot() {
                                 } else {
                                     localStratText = (data.dry_strategy === 2) ? "VPD AU" : ((data.dry_strategy === 1) ? "VPD" : "60/60");
                                 }
-                                btnRemote.innerHTML = "<span style='color: #f87171; font-weight: bold;'>NOTFALL</span> " + localStratText;
+                                btnRemote.innerHTML = "<span style='color: #f87171; font-weight: bold;'>" + (currentLang === 'en' ? 'EMERGENCY' : 'NOTFALL') + "</span> " + localStratText;
                             }
                         }
                         if (hlBox) hlBox.style.display = 'none';
                         if (vpdAutoBox) vpdAutoBox.style.display = 'none';
-                        if (potiALabel) potiALabel.innerText = 'Sollwert Feuchte (A):';
+                        if (potiALabel) potiALabel.innerText = (currentLang === 'en' ? 'Target Humidity (A):' : 'Sollwert Feuchte (A):');
 
                         let potValA = data.potentiometers.poti_a_target_hum;
                         let displayA = potValA.toFixed(0) + " %";
                         if (potValA <= 49.5) {
-                            displayA = "Rigoros ZU";
+                            displayA = (currentLang === 'en' ? "Strictly CLOSED" : "Rigoros ZU");
                         } else if (potValA >= 70.5) {
-                            displayA = "Rigoros AUF";
+                            displayA = (currentLang === 'en' ? "Strictly OPEN" : "Rigoros AUF");
                         }
                         document.getElementById('poti-a').innerText = displayA;
                     } else if (!hasAnyTempSensor) {
                         if (stratSection) stratSection.style.display = 'none';
                         if (hlBox) hlBox.style.display = 'none';
                         if (vpdAutoBox) vpdAutoBox.style.display = 'none';
-                        if (potiALabel) potiALabel.innerText = 'Sollwert Feuchte (A):';
+                        if (potiALabel) potiALabel.innerText = (currentLang === 'en' ? 'Target Humidity (A):' : 'Sollwert Feuchte (A):');
 
                         let potValA = data.potentiometers.poti_a_target_hum;
                         let displayA = potValA.toFixed(0) + " %";
                         if (potValA <= 49.5) {
-                            displayA = "Rigoros ZU";
+                            displayA = (currentLang === 'en' ? "Strictly CLOSED" : "Rigoros ZU");
                         } else if (potValA >= 70.5) {
-                            displayA = "Rigoros AUF";
+                            displayA = (currentLang === 'en' ? "Strictly OPEN" : "Rigoros AUF");
                         }
                         document.getElementById('poti-a').innerText = displayA;
                     } else {
@@ -4735,7 +5035,7 @@ void handlePortalRoot() {
                             if (vpdAutoBox) vpdAutoBox.style.display = 'block';
                             
                             let tempR = (data.indoor_temp_rounded !== undefined) ? data.indoor_temp_rounded : ((data.sensors && data.sensors[0] && data.sensors[0].temperature !== undefined && data.sensors[0].temperature !== null) ? Math.round(data.sensors[0].temperature) : 20);
-                            if (potiALabel) potiALabel.innerText = 'AUTO VPD (Tag ' + vpdAutoDay + ' @ ' + tempR + '°C):';
+                            if (potiALabel) potiALabel.innerText = (currentLang === 'en' ? 'AUTO VPD (Day ' : 'AUTO VPD (Tag ') + vpdAutoDay + ' @ ' + tempR + '°C):';
                             if (hygroLim === 80) { if (hl80) hl80.checked = true; }
                             else if (hygroLim === 75) { if (hl75) hl75.checked = true; }
                             else { if (hl70) hl70.checked = true; }
@@ -4767,7 +5067,7 @@ void handlePortalRoot() {
                             if (btn6060) { btn6060.style.background = '#1e293b'; btn6060.style.color = '#94a3b8'; }
                             if (hlBox) hlBox.style.display = 'block';
                             if (vpdAutoBox) vpdAutoBox.style.display = 'none';
-                            if (potiALabel) potiALabel.innerText = 'Soll VPD:';
+                            if (potiALabel) potiALabel.innerText = (currentLang === 'en' ? 'Target VPD (A):' : 'Soll VPD:');
                             if (hygroLim === 80) { if (hl80) hl80.checked = true; }
                             else if (hygroLim === 75) { if (hl75) hl75.checked = true; }
                             else { if (hl70) hl70.checked = true; }
@@ -4795,14 +5095,14 @@ void handlePortalRoot() {
                             if (btnVpdAuto) { btnVpdAuto.style.background = '#1e293b'; btnVpdAuto.style.color = '#94a3b8'; }
                             if (hlBox) hlBox.style.display = 'none';
                             if (vpdAutoBox) vpdAutoBox.style.display = 'none';
-                            if (potiALabel) potiALabel.innerText = 'Sollwert Feuchte (A):';
+                            if (potiALabel) potiALabel.innerText = (currentLang === 'en' ? 'Target Humidity (A):' : 'Sollwert Feuchte (A):');
 
                             let potValA = data.potentiometers.poti_a_target_hum;
                             let displayA = potValA.toFixed(0) + " %";
                             if (potValA <= 49.5) {
-                                displayA = "Rigoros ZU";
+                                displayA = (currentLang === 'en' ? "Strictly CLOSED" : "Rigoros ZU");
                             } else if (potValA >= 70.5) {
-                                displayA = "Rigoros AUF";
+                                displayA = (currentLang === 'en' ? "Strictly OPEN" : "Rigoros AUF");
                             }
                             document.getElementById('poti-a').innerText = displayA;
                         }
@@ -4836,7 +5136,7 @@ void handlePortalRoot() {
 
                         if (data.purge_interval_min === 0) {
                             if (purgeBadge) {
-                                purgeBadge.innerText = "Aus";
+                                purgeBadge.innerText = (currentLang === 'en' ? "Off" : "Aus");
                                 purgeBadge.style.color = "#94a3b8";
                                 purgeBadge.style.background = "rgba(255,255,255,0.05)";
                                 purgeBadge.style.borderColor = "rgba(255,255,255,0.1)";
@@ -4854,7 +5154,7 @@ void handlePortalRoot() {
                             let pct = Math.max(0, Math.min(1, remaining / totalDur));
                             
                             if (purgeBadge) {
-                                purgeBadge.innerText = "🔥 100% AUF (" + remaining + "s)";
+                                purgeBadge.innerText = (currentLang === 'en' ? "🔥 100% OPEN (" : "🔥 100% AUF (") + remaining + "s)";
                                 purgeBadge.style.color = "#f87171";
                                 purgeBadge.style.background = "rgba(248, 113, 113, 0.2)";
                                 purgeBadge.style.borderColor = "rgba(248, 113, 113, 0.4)";
@@ -4869,8 +5169,7 @@ void handlePortalRoot() {
                             }
                             if (sandBottom) {
                                 sandBottom.setAttribute("fill", "#f87171");
-                                let bScale = (pct < 1) ? Math.pow(1 - pct, 0.45) : 0;
-                                sandBottom.style.transform = "scale(" + bScale + ")";
+                                sandBottom.style.transform = "scale(" + (1 - pct) + ")";
                             }
                         } else {
                             // NORMAL COUNTDOWN -> HELLBLAUER SAND!
@@ -4881,7 +5180,7 @@ void handlePortalRoot() {
                             let h = Math.floor(remaining / 3600);
                             let m = Math.floor((remaining % 3600) / 60);
                             let s = remaining % 60;
-                            let timeStr = "In " + (h > 0 ? (h + "h " + (m < 10 ? "0" : "") + m + "m") : (m + ":" + (s < 10 ? "0" : "") + s));
+                            let timeStr = (currentLang === 'en' ? "In " : "In ") + (h > 0 ? (h + "h " + (m < 10 ? "0" : "") + m + "m") : (m + ":" + (s < 10 ? "0" : "") + s));
 
                             if (purgeBadge) {
                                 purgeBadge.innerText = timeStr;
@@ -4899,9 +5198,12 @@ void handlePortalRoot() {
                             }
                             if (sandBottom) {
                                 sandBottom.setAttribute("fill", "#38bdf8");
-                                let totalMin = data.purge_interval_min || 240;
-                                let exp = Math.max(0.16, 0.36 - 0.08 * Math.log10(Math.max(10, totalMin) / 10));
-                                let bScale = (pct < 1) ? Math.pow(1 - pct, exp) : 0;
+                                let elapsed = 1 - pct;
+                                let bScale = 0;
+                                if (elapsed > 0) {
+                                    let ramp = Math.min(1, elapsed / 0.005);
+                                    bScale = elapsed + 0.12 * (1 - elapsed) * ramp;
+                                }
                                 sandBottom.style.transform = "scale(" + bScale + ")";
                             }
                         }
@@ -4917,7 +5219,7 @@ void handlePortalRoot() {
                         let connEl = document.getElementById('espnow-val-conn');
                         let lastSeenMs = data.espnow_last_seen_ms;
                         if (lastSeenMs === -1) {
-                            connEl.innerText = "Keine Verbindung";
+                            connEl.innerText = (currentLang === 'en' ? "No Connection" : "Keine Verbindung");
                             connEl.style.color = "#f87171";
                         } else if (lastSeenMs <= 5000) {
                             let intervalSec = ((data.espnow_interval_ms || 1000) / 1000).toFixed(3);
@@ -4930,8 +5232,9 @@ void handlePortalRoot() {
                         
                         let pvEl = document.getElementById('espnow-val-pv');
                         if (data.espnow_pv_mismatch) {
+                            let tip = (currentLang === 'en' ? "Different protocol versions detected, please align firmware versions." : "Unterschiedliche Protokolle erkannt, bitte firmware auf gemeinsamen stand bringen.");
                             pvEl.innerHTML = "<span style='color: #ef4444; font-weight: bold; display: inline-flex; align-items: center;'>V" + data.espnow_local_pv + 
-                                             " <div class='tooltip'><span class='info-icon'>i</span><span class='tooltiptext'>Unterschiedliche Protokolle erkannt, bitte firmware auf gemeinsamen stand bringen.</span></div></span>";
+                                             " <div class='tooltip'><span class='info-icon'>i</span><span class='tooltiptext'>" + tip + "</span></div></span>";
                         } else {
                             pvEl.innerHTML = "<span>V" + data.espnow_local_pv + "</span>";
                         }
@@ -5673,7 +5976,7 @@ void handlePortalRoot() {
         setInterval(fetchHistory, 1000);
         initHoldButtonListeners();
         initDrumPickers();
-        renderAdvisorMsg(0);
+        setLanguage(currentLang);
         updateData();
         fetchHistory();
     </script>
@@ -5870,12 +6173,12 @@ void handlePortalSave() {
 void handleSettingsPage() {
   if (!isWebAuthenticated()) {
     server.send(401, "text/html",
-                "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Zugriff geschützt</title>"
+                "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Zugriff geschützt / Protected</title>"
                 "<style>body{background:#0f172a;color:white;text-align:center;padding-top:100px;font-family:sans-serif;}</style></head>"
                 "<body><div style='background:#1e293b;padding:30px;border-radius:15px;display:inline-block;'>"
                 "<h1 style='color:#f87171;margin-bottom:15px;'>🔒 Webinterface geschützt</h1>"
-                "<p style='color:#cbd5e1;margin-bottom:20px;'>Für den Zugriff auf die Einstellungen ist eine Anmeldung im Dashboard erforderlich.</p>"
-                "<a href='/' style='color:#38bdf8;'>Zurück zum Dashboard</a></div></body></html>");
+                "<p style='color:#cbd5e1;margin-bottom:20px;'>Für den Zugriff auf die Einstellungen ist eine Anmeldung im Dashboard erforderlich.<br><small style='color:#94a3b8;'>Please log in via the dashboard to access settings.</small></p>"
+                "<a href='/' style='color:#38bdf8;'>Zurück zum Dashboard / Back to Dashboard</a></div></body></html>");
     return;
   }
   bool hasLocalSensor = (detectedTempSensors > 0) ||
@@ -5908,17 +6211,53 @@ void handleSettingsPage() {
             width: 100%;
             max-width: 550px;
         }
-        .header-title {
-            text-align: center;
+        .header-title-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             margin-bottom: 25px;
+        }
+        .header-title {
             font-size: 26px;
             font-weight: 600;
             letter-spacing: 1px;
             color: #818cf8;
             display: flex;
             align-items: center;
-            justify-content: center;
             gap: 10px;
+        }
+        .lang-pill {
+            display: inline-flex;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 9999px;
+            padding: 3px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        }
+        .lang-btn {
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            padding: 4px 10px;
+            font-size: 11.5px;
+            font-weight: 600;
+            border-radius: 9999px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .lang-btn:hover {
+            color: #f8fafc;
+        }
+        .lang-btn.active {
+            background: rgba(56, 189, 248, 0.25);
+            color: #38bdf8;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+            border: 1px solid rgba(56, 189, 248, 0.5);
         }
         .settings-card {
             background: rgba(30, 41, 59, 0.45);
@@ -6079,102 +6418,114 @@ void handleSettingsPage() {
 </head>
 <body>
     <div class="container">
-        <h1 class="header-title">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-            Einstellungen
-        </h1>
+        <div class="header-title-container">
+            <h1 class="header-title">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                <span data-i18n="settings_title">Einstellungen</span>
+            </h1>
+            <div class="lang-pill">
+                <button type="button" class="lang-btn active" id="lang-btn-de" onclick="setLanguage('de')" title="Deutsch">
+                    <svg width="14" height="10" viewBox="0 0 16 12" style="border-radius:2px; display:inline-block; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.6);"><rect width="16" height="4" y="0" fill="#111"/><rect width="16" height="4" y="4" fill="#D00"/><rect width="16" height="4" y="8" fill="#FFCE00"/></svg>
+                    <span style="font-size: 10.5px; font-weight: bold; margin-left: 2px;">DE</span>
+                </button>
+                <button type="button" class="lang-btn" id="lang-btn-en" onclick="setLanguage('en')" title="English (US)">
+                    <svg width="14" height="10" viewBox="0 0 16 12" style="border-radius:2px; display:inline-block; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.6);"><rect width="16" height="12" fill="#B22234"/><rect width="16" height="1.85" y="1.85" fill="#FFF"/><rect width="16" height="1.85" y="5.54" fill="#FFF"/><rect width="16" height="1.85" y="9.23" fill="#FFF"/><rect width="7" height="6.5" fill="#3C3B6E"/><circle cx="2.2" cy="2" r="0.6" fill="#fff"/><circle cx="4.8" cy="2" r="0.6" fill="#fff"/><circle cx="3.5" cy="3.5" r="0.6" fill="#fff"/><circle cx="2.2" cy="5" r="0.6" fill="#fff"/><circle cx="4.8" cy="5" r="0.6" fill="#fff"/></svg>
+                    <span style="font-size: 10.5px; font-weight: bold; margin-left: 2px;">EN</span>
+                </button>
+            </div>
+        </div>
         
         <form action="/settings/save" method="POST" id="settings-form">
             <!-- WLAN Einstellungen Panel -->
             <div class="settings-card">
                 <div class="section-title">
-                    <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><circle cx="12" cy="20" r="1"></circle></svg> WLAN Verbindung</span>
+                    <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><circle cx="12" cy="20" r="1"></circle></svg> <span data-i18n="sec_wifi">WLAN Verbindung</span></span>
                     <span class="info-btn" onclick="toggleInfo(event, 13)" onmouseenter="showInfo(this, 13)" onmouseleave="hideInfo(this)">i</span>
                 </div>
                 <div class="form-group">
-                    <label for="wifi_ssid">Netzwerk (SSID)</label>
+                    <label for="wifi_ssid" data-i18n="lbl_wifi_ssid">Netzwerk (SSID)</label>
                     <input type="text" name="wifi_ssid" id="wifi_ssid" value=")rawhtml";
   html += String(sysConfig.wifi_ssid);
   html += R"rawhtml(" required>
                 </div>
                 <div class="form-group">
-                    <label for="wifi_pass">Wi-Fi Passwort</label>
+                    <label for="wifi_pass" data-i18n="lbl_wifi_pass">Wi-Fi Passwort</label>
                     <input type="password" name="wifi_pass" id="wifi_pass" value=")rawhtml";
   html += String(sysConfig.wifi_pass);
   html += R"rawhtml(" placeholder="Passwort eingeben">
                 </div>
                 <div class="form-group">
-                    <label for="wifi_tx_power">Sendeleistung (RF TX Power)</label>
+                    <label for="wifi_tx_power" data-i18n="lbl_wifi_tx">Sendeleistung (RF TX Power)</label>
                     <select name="wifi_tx_power" id="wifi_tx_power">
-                        <option value="78" style="color: #f87171;")rawhtml";
+                        <option value="78" style="color: #f87171;" data-i18n="opt_tx_78")rawhtml";
   if (sysConfig.wifi_tx_power == 78)
     html += " selected";
   html += R"rawhtml(>19.5 dBm (Maximum - Risiko!)</option>
-                        <option value="68" style="color: #f87171;")rawhtml";
+                        <option value="68" style="color: #f87171;" data-i18n="opt_tx_68")rawhtml";
   if (sysConfig.wifi_tx_power == 68)
     html += " selected";
   html += R"rawhtml(>17.0 dBm (Hoch - Risiko!)</option>
-                        <option value="60" style="color: #f87171;")rawhtml";
+                        <option value="60" style="color: #f87171;" data-i18n="opt_tx_60")rawhtml";
   if (sysConfig.wifi_tx_power == 60)
     html += " selected";
   html += R"rawhtml(>15.0 dBm (Mittel - Warnung)</option>
-                        <option value="52" style="color: #4ade80;")rawhtml";
+                        <option value="52" style="color: #4ade80;" data-i18n="opt_tx_52")rawhtml";
   if (sysConfig.wifi_tx_power == 52)
     html += " selected";
   html += R"rawhtml(>13.0 dBm (Standard - Empfohlen)</option>
-                        <option value="44")rawhtml";
+                        <option value="44" data-i18n="opt_tx_44")rawhtml";
   if (sysConfig.wifi_tx_power == 44)
     html += " selected";
   html += R"rawhtml(>11.0 dBm (Sehr Niedrig)</option>
-                        <option value="34")rawhtml";
+                        <option value="34" data-i18n="opt_tx_34")rawhtml";
   if (sysConfig.wifi_tx_power == 34)
     html += " selected";
   html += R"rawhtml(>8.5 dBm (Minimum)</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="web_password">Webinterface Passwort (Optional)</label>
+                    <label for="web_password" data-i18n="lbl_web_pass">Webinterface Passwort (Optional)</label>
                     <input type="password" name="web_password" id="web_password" value=")rawhtml";
   if (strlen(sysConfig.web_password) > 0) {
     html += "********";
   }
   html += R"rawhtml(" placeholder="passwort eintragen">
-                    <span class="hint-text">Freilassen für freien Lesezugriff. Sobald ein Passwort eingetragen ist, schützt es Konsolen &amp; Einstellungen.</span>
+                    <span class="hint-text" data-i18n="hint_web_pass">Freilassen für freien Lesezugriff. Sobald ein Passwort eingetragen ist, schützt es Konsolen &amp; Einstellungen.</span>
                 </div>
             </div>
 
             <!-- MQTT Einstellungen Panel -->
             <div class="settings-card">
                 <div class="section-title">
-                    <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg> MQTT Konfiguration</span>
+                    <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg> <span data-i18n="sec_mqtt">MQTT Konfiguration</span></span>
                     <span class="info-btn" onclick="toggleInfo(event, 14)" onmouseenter="showInfo(this, 14)" onmouseleave="hideInfo(this)">i</span>
                 </div>
                 <div class="form-group">
-                    <label for="mqtt_server">MQTT Broker Adresse</label>
+                    <label for="mqtt_server" data-i18n="lbl_mqtt_server">MQTT Broker Adresse</label>
                     <input type="text" name="mqtt_server" id="mqtt_server" value=")rawhtml";
   html += String(sysConfig.mqtt_server);
   html += R"rawhtml(" placeholder="z.B. 192.168.1.100">
                 </div>
                 <div class="form-group">
-                    <label for="mqtt_port">MQTT Port</label>
+                    <label for="mqtt_port" data-i18n="lbl_mqtt_port">MQTT Port</label>
                     <input type="number" name="mqtt_port" id="mqtt_port" value=")rawhtml";
   html += String(sysConfig.mqtt_port);
   html += R"rawhtml(" required>
                 </div>
                 <div class="form-group">
-                    <label for="mqtt_user">MQTT Benutzername</label>
+                    <label for="mqtt_user" data-i18n="lbl_mqtt_user">MQTT Benutzername</label>
                     <input type="text" name="mqtt_user" id="mqtt_user" value=")rawhtml";
   html += String(sysConfig.mqtt_user);
   html += R"rawhtml(" placeholder="optional">
                 </div>
                 <div class="form-group">
-                    <label for="mqtt_pass">MQTT Passwort</label>
+                    <label for="mqtt_pass" data-i18n="lbl_mqtt_pass">MQTT Passwort</label>
                     <input type="password" name="mqtt_pass" id="mqtt_pass" value=")rawhtml";
   html += String(sysConfig.mqtt_pass);
   html += R"rawhtml(" placeholder="optional">
                 </div>
                 <div class="form-group">
-                    <label for="mqtt_device_name">Gerätename (HA Discovery Name)</label>
+                    <label for="mqtt_device_name" data-i18n="lbl_mqtt_dev">Gerätename (HA Discovery Name)</label>
                     <input type="text" name="mqtt_device_name" id="mqtt_device_name" value=")rawhtml";
   html += String(sysConfig.mqtt_device_name);
   html += R"rawhtml(" required>
@@ -6183,7 +6534,7 @@ void handleSettingsPage() {
   html += R"rawhtml(/state</span></span>
                 </div>
                 <div class="form-group">
-                    <label for="interval-slider">MQTT Sende-Intervall: <span id="interval-label">)rawhtml";
+                    <label for="interval-slider"><span data-i18n="lbl_mqtt_interval">MQTT Sende-Intervall:</span> <span id="interval-label">)rawhtml";
   html += String(sysConfig.mqtt_report_interval);
   html += R"rawhtml( Minuten</span></label>
                     <div class="slider-container">
@@ -6197,32 +6548,32 @@ void handleSettingsPage() {
             <!-- ESP-NOW Einstellungen Panel -->
             <div class="settings-card">
                 <div class="section-title">
-                    <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg> ESPNOW &nbsp;<span id="espnow-local-mac" style="font-family: monospace; text-transform: none; color: #94a3b8;">[Laden...]</span></span>
+                    <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg> <span data-i18n="sec_espnow">ESPNOW</span> &nbsp;<span id="espnow-local-mac" style="font-family: monospace; text-transform: none; color: #94a3b8;">[Laden...]</span></span>
                     <span class="info-btn" onclick="toggleInfo(event, 15)" onmouseenter="showInfo(this, 15)" onmouseleave="hideInfo(this)">i</span>
                 </div>
                 <div class="form-group">
-                    <label for="espnow_role">Status / Rolle</label>
+                    <label for="espnow_role" data-i18n="lbl_espnow_role">Status / Rolle</label>
                     <select name="espnow_role" id="espnow_role" onchange="toggleEspNowFields()")rawhtml";
   if (strlen(sysConfig.espnow_peer_mac) > 0) {
     html += " disabled";
   }
   html += R"rawhtml(>
-                        <option value="0")rawhtml";
+                        <option value="0" data-i18n="opt_role_disabled")rawhtml";
   if (sysConfig.espnow_role == 0)
     html += " selected";
   html += R"rawhtml(>Deaktiviert</option>
-                        <option value="1")rawhtml";
+                        <option value="1" data-i18n="opt_role_master")rawhtml";
   if (sysConfig.espnow_role == 1)
     html += " selected";
   html += R"rawhtml(>Master</option>
-                        <option value="2")rawhtml";
+                        <option value="2" data-i18n="opt_role_slave")rawhtml";
   if (sysConfig.espnow_role == 2)
     html += " selected";
   html += R"rawhtml(>Slave</option>
                     </select>
                 </div>
                 <div class="form-group" id="espnow-channel-group">
-                    <label for="espnow_channel">Kanal (nur für Slave relevant)</label>
+                    <label for="espnow_channel" data-i18n="lbl_espnow_chan">Kanal (nur für Slave relevant)</label>
                     <select name="espnow_channel" id="espnow_channel")rawhtml";
   if (strlen(sysConfig.espnow_peer_mac) > 0) {
     html += " disabled";
@@ -6239,7 +6590,7 @@ void handleSettingsPage() {
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="espnow_peer_mac">Partner MAC-Adresse</label>
+                    <label for="espnow_peer_mac" data-i18n="lbl_espnow_peer">Partner MAC-Adresse</label>
                     <input type="text" name="espnow_peer_mac" id="espnow_peer_mac" value=")rawhtml";
   html += String(sysConfig.espnow_peer_mac);
   html +=
@@ -6248,17 +6599,17 @@ void handleSettingsPage() {
     html += " readonly";
   }
   html += R"rawhtml(>
-                    <span class="hint-text" id="espnow-scan-hint")rawhtml";
+                    <span class="hint-text" id="espnow-scan-hint" data-i18n="hint_espnow_scan")rawhtml";
   if (strlen(sysConfig.espnow_peer_mac) > 0) {
     html += " style=\"display:none;\"";
   }
   html += R"rawhtml(>Leer lassen für automatischen Scan</span>
                 </div>
                 <div class="form-group">
-                    <label for="espnow_failsafe_mode">Connection-Loss Fail-Safe (Slave)</label>)rawhtml";
+                    <label for="espnow_failsafe_mode" data-i18n="lbl_espnow_failsafe">Connection-Loss Fail-Safe (Slave)</label>)rawhtml";
   if (!hasLocalSensor) {
     html += R"rawhtml(
-                    <div style="color: #f87171; font-size: 12px; margin-top: 6px; margin-bottom: 8px; font-weight: 500; line-height: 1.4;">
+                    <div data-i18n="failsafe_no_sensor" style="color: #f87171; font-size: 12px; margin-top: 6px; margin-bottom: 8px; font-weight: 500; line-height: 1.4;">
                         (Kein Sensor angeschlossen! -> Notfall 50% erzwungen)<br>
                         Bei Bedarf BME280 oder SHT31 anschließen<br>
                         Und dann nochmal hier im Menu aktivieren.
@@ -6266,11 +6617,11 @@ void handleSettingsPage() {
   }
   html += R"rawhtml(
                     <select name="espnow_failsafe_mode" id="espnow_failsafe_mode">
-                        <option value="0")rawhtml";
+                        <option value="0" data-i18n="opt_failsafe_0")rawhtml";
   if (sysConfig.espnow_failsafe_mode == 0 || !hasLocalSensor)
     html += " selected";
   html += R"rawhtml(>50% Rotor-Position (Notfall-Öffnung)</option>
-                        <option value="1")rawhtml";
+                        <option value="1" data-i18n="opt_failsafe_1")rawhtml";
   if (sysConfig.espnow_failsafe_mode == 1 && hasLocalSensor)
     html += " selected";
   if (!hasLocalSensor)
@@ -6280,10 +6631,10 @@ void handleSettingsPage() {
     html += "[Kein Sensor]";
   html += R"rawhtml(</option>
                     </select>
-                    <span class="hint-text">Verhalten des Slaves bei Verbindungsverlust (>60s) zum Master</span>
+                    <span class="hint-text" data-i18n="hint_failsafe">Verhalten des Slaves bei Verbindungsverlust (>60s) zum Master</span>
                 </div>
                 <div class="form-group">
-                    <label>Verbindungs-Status</label>
+                    <label data-i18n="lbl_espnow_status">Verbindungs-Status</label>
                     <div id="espnow-status" style="font-size: 13px; font-weight: 600; font-family: monospace; color: #f87171; margin-bottom: 8px;">
                         Warte auf Verbindung...
                     </div>
@@ -6291,7 +6642,7 @@ void handleSettingsPage() {
                     <span class="hint-text" id="espnow-pv-warning" style="color: #f87171; display: none; margin-top: 4px;">Protokoll-Unterschiede erkannt, bitte Firmware updaten auf eine gemeinsame Version.</span>
                 </div>
                 <div class="btn-row" style="margin-top: 15px;">
-                    <button type="button" id="pair-btn" onclick="togglePairing()" class="btn btn-secondary")rawhtml";
+                    <button type="button" id="pair-btn" onclick="togglePairing()" class="btn btn-secondary" data-i18n="btn_pairing_start")rawhtml";
   if (strlen(sysConfig.espnow_peer_mac) > 0) {
     html += " style=\"display:none;\"";
   }
@@ -6302,12 +6653,12 @@ void handleSettingsPage() {
             <!-- Buzzer Test Panel -->
             <div class="settings-card">
                 <div class="section-title">
-                    <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg> Buzzer Test</span>
+                    <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg> <span data-i18n="sec_buzzer">Buzzer Test</span></span>
                     <span class="info-btn" onclick="toggleInfo(event, 16)" onmouseenter="showInfo(this, 16)" onmouseleave="hideInfo(this)">i</span>
                 </div>
                 <div class="btn-row" style="margin-top: 5px;">
-                    <button type="button" onclick="testBuzzer('local')" class="btn btn-secondary">Lokal abspielen</button>
-                    <button type="button" id="remote-buzz-btn" onclick="testBuzzer('remote')" class="btn btn-secondary" style="display: none;">Remote abspielen</button>
+                    <button type="button" onclick="testBuzzer('local')" class="btn btn-secondary" data-i18n="btn_buzz_local">Lokal abspielen</button>
+                    <button type="button" id="remote-buzz-btn" onclick="testBuzzer('remote')" class="btn btn-secondary" data-i18n="btn_buzz_remote" style="display: none;">Remote abspielen</button>
                 </div>
             </div>
 
@@ -6316,28 +6667,28 @@ void handleSettingsPage() {
                 <div class="section-title">
                     <span style="display: flex; align-items: center; gap: 8px;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                        Servo Laufleistung &amp; Odometer
+                        <span data-i18n="sec_odometer">Servo Laufleistung &amp; Odometer</span>
                     </span>
                     <span class="info-btn" onclick="toggleInfo(event, 21)" onmouseenter="showInfo(this, 21)" onmouseleave="hideInfo(this)">i</span>
                 </div>
                 <div class="value-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 13px;">
-                    <span>Gesamtweg:</span>
+                    <span data-i18n="lbl_odo_total">Gesamtweg:</span>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <button type="button" id="odo-save-btn" onclick="submitOdometerChange()" style="display:none; padding: 3px 8px; background: #0284c7; border: 1px solid #38bdf8; color: white; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer;">Ändern</button>
+                        <button type="button" id="odo-save-btn" onclick="submitOdometerChange()" data-i18n="btn_odo_save" style="display:none; padding: 3px 8px; background: #0284c7; border: 1px solid #38bdf8; color: white; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer;">Ändern</button>
                         <input type="number" step="0.01" min="0" id="odo-input" onfocus="pauseOdoUpdate(true)" oninput="onOdoInputChanged()" onblur="setTimeout(() => pauseOdoUpdate(false), 5000)" style="width: 110px; padding: 4px 8px; background: rgba(15,23,42,0.8); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #38bdf8; font-family: monospace; font-size: 13px; font-weight: 600; text-align: right; outline: none;">
                         <span id="odo-unit" style="font-family: monospace; color: #94a3b8; font-size: 12px;">m</span>
                     </div>
                 </div>
                 <div style="margin-bottom: 8px;">
                     <div style="display: flex; justify-content: space-between; font-size: 11px; color: #94a3b8; margin-bottom: 4px;">
-                        <span>Lebensdauer-Status (50 km Basis):</span>
+                        <span data-i18n="lbl_odo_life">Lebensdauer-Status (50 km Basis):</span>
                         <span id="odo-pct-label" style="font-family: monospace; color: #38bdf8; font-weight: bold;">0.00 %</span>
                     </div>
                     <div style="width: 100%; height: 10px; background: rgba(15,23,42,0.8); border-radius: 5px; border: 1px solid rgba(255,255,255,0.08); overflow: hidden;">
                         <div id="odo-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%); transition: width 0.4s ease;"></div>
                     </div>
                 </div>
-                <span class="hint-text" style="font-size: 11px; color: #64748b; margin-top: 6px; display: block;">
+                <span class="hint-text" data-i18n="hint_odo" style="font-size: 11px; color: #64748b; margin-top: 6px; display: block;">
                     Berechnung: Hebelarm r=27mm (0.471 mm/&deg;) &bull; Nenn-Lebensdauer: 50.000 m (Dual-Storage Flash &amp; NVS)
                 </span>
             </div>
@@ -6345,20 +6696,20 @@ void handleSettingsPage() {
             <!-- System Status Panel -->
             <div class="settings-card">
                 <div class="section-title">
-                    <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg> System Status</span>
+                    <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg> <span data-i18n="sec_sys_status">System Status</span></span>
                     <span class="info-btn" onclick="toggleInfo(event, 18)" onmouseenter="showInfo(this, 18)" onmouseleave="hideInfo(this)">i</span>
                 </div>
                 <div class="value-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 13px;">
-                    <span>IP-Adresse:</span>
+                    <span data-i18n="lbl_sys_ip">IP-Adresse:</span>
                     <span class="val" id="sys-ip" style="font-family: monospace; color: #38bdf8; font-weight: 600;">--</span>
                 </div>
                 <div class="value-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 13px;">
-                    <span>Anzeige-Modus:</span>
+                    <span data-i18n="lbl_sys_mode">Anzeige-Modus:</span>
                     <span class="val" id="sys-mode" style="font-family: monospace; font-weight: 600;">--</span>
                 </div>
                 <div class="value-row" style="display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
                     <span style="display: flex; align-items: center; gap: 10px;">
-                        Signalstärke RSSI:
+                        <span data-i18n="lbl_sys_rssi">Signalstärke RSSI:</span>
                         <div style="width: 50px; height: 8px; background: rgba(255,255,255,0.15); border-radius: 4px; overflow: hidden; display: inline-block;">
                             <div id="sys-rssi-bar" style="width: 0%; height: 100%; transition: width 0.3s, background-color 0.3s; background: #ef4444;"></div>
                         </div>
@@ -6366,7 +6717,7 @@ void handleSettingsPage() {
                     <span class="val" id="sys-rssi" style="font-family: monospace; color: #38bdf8; font-weight: 600;">--</span>
                 </div>
                 <div class="value-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 13px;">
-                    <span>Watchdog reset weekly:</span>
+                    <span data-i18n="lbl_sys_wd">Watchdog reset weekly:</span>
                     <span class="val" id="settings-wd-reset" style="font-family: monospace; font-weight: 600;">--</span>
                 </div>
             </div>
@@ -6374,11 +6725,11 @@ void handleSettingsPage() {
             <!-- Systemeinstellungen Panel -->
             <div class="settings-card">
                 <div class="section-title">
-                    <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg> System & Anzeige</span>
+                    <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg> <span data-i18n="sec_sys_disp">System & Anzeige</span></span>
                     <span class="info-btn" onclick="toggleInfo(event, 17)" onmouseenter="showInfo(this, 17)" onmouseleave="hideInfo(this)">i</span>
                 </div>
                 <div class="form-group">
-                    <label for="brightness-slider">Display-Helligkeit: <span id="brightness-label">)rawhtml";
+                    <label for="brightness-slider"><span data-i18n="lbl_disp_bright">Display-Helligkeit:</span> <span id="brightness-label">)rawhtml";
   html += String(sysConfig.display_brightness);
   html += R"rawhtml(%</span></label>
                     <div class="slider-container">
@@ -6386,10 +6737,10 @@ void handleSettingsPage() {
   html += String(sysConfig.display_brightness);
   html += R"rawhtml(">
                     </div>
-                    <span class="hint-text" style="font-family: inherit;">Natürliches Dimmverhalten über Gamma 2.2 Korrektur</span>
+                    <span class="hint-text" data-i18n="hint_gamma" style="font-family: inherit;">Natürliches Dimmverhalten über Gamma 2.2 Korrektur</span>
                 </div>
                 <div class="form-group">
-                    <label for="servo-interval-slider">Servo Update-Intervall: <span id="servo-interval-label">)rawhtml";
+                    <label for="servo-interval-slider"><span data-i18n="lbl_servo_int">Servo Update-Intervall:</span> <span id="servo-interval-label">)rawhtml";
   html += String(sysConfig.servo_update_interval);
   html += R"rawhtml( Sekunden</span></label>
                     <div class="slider-container">
@@ -6399,7 +6750,7 @@ void handleSettingsPage() {
                     </div>
                 </div>
                 <div class="form-group">
-                    <label for="wlan-time-trap-slider">WLAN connection watchdog time: <span id="wlan-time-trap-label">)rawhtml";
+                    <label for="wlan-time-trap-slider"><span data-i18n="lbl_wlan_trap">WLAN connection watchdog time:</span> <span id="wlan-time-trap-label">)rawhtml";
   if (sysConfig.wlan_time_trap == 0) {
     html += "0 <span style='color: #ef4444; font-weight: bold;'> "
             "(deaktiviert)</span>";
@@ -6417,21 +6768,21 @@ void handleSettingsPage() {
             </div>
 
             <div class="btn-row">
-                <button type="submit" class="btn btn-save">Save</button>
-                <a href="/" class="btn btn-back">Back</a>
+                <button type="submit" class="btn btn-save" data-i18n="btn_save">Speichern</button>
+                <a href="/" class="btn btn-back" data-i18n="btn_back">Zurück</a>
             </div>
         </form>
 
         <!-- Geräte-Management Panel -->
         <div class="settings-card" style="margin-top: 25px;">
             <div class="section-title" style="color: #f87171;">
-                <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Geräte-Management</span>
+                <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> <span data-i18n="sec_dev_mgmt">Geräte-Management</span></span>
                 <span class="info-btn" onclick="toggleInfo(event, 19)" onmouseenter="showInfo(this, 19)" onmouseleave="hideInfo(this)">i</span>
             </div>
             <form id="reset-form" action="/settings/reset" method="POST">
                 <div class="btn-row" style="margin-top: 5px; flex-direction: column; gap: 12px;">
-                    <a href="/firmware" id="ota-update-btn" class="btn btn-secondary" style="width:100%; border-color: rgba(129, 140, 248, 0.4); color: #cbd5e1; text-decoration: none; text-align: center; display: block; box-sizing: border-box;">Firmware & OTA Update</a>
-                    <button type="submit" name="action" value="reboot" class="btn btn-secondary" style="width:100%; border-color: rgba(74, 222, 128, 0.4); color: #4ade80;">Reboot Device</button>
+                    <a href="/firmware" id="ota-update-btn" class="btn btn-secondary" data-i18n="btn_ota" style="width:100%; border-color: rgba(129, 140, 248, 0.4); color: #cbd5e1; text-decoration: none; text-align: center; display: block; box-sizing: border-box;">Firmware & OTA Update</a>
+                    <button type="submit" name="action" value="reboot" class="btn btn-secondary" data-i18n="btn_reboot" style="width:100%; border-color: rgba(74, 222, 128, 0.4); color: #4ade80;">Reboot Device</button>
                     <button type="submit" name="action" value="reboot_linked" id="reboot-linked-btn" class="btn btn-secondary" style="width:100%; border-color: rgba(74, 222, 128, 0.4); color: #4ade80; display: )rawhtml";
   if (strlen(sysConfig.espnow_peer_mac) > 0) {
     html += "inline-flex;";
@@ -6439,12 +6790,12 @@ void handleSettingsPage() {
     html += "none;";
   }
   html += R"rawhtml( align-items: center; justify-content: center; gap: 8px;">
-                        Reboot linked Device
+                        <span data-i18n="btn_reboot_linked">Reboot linked Device</span>
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
                     </button>
-                    <button type="submit" name="action" value="defaults" class="btn btn-secondary" style="width:100%;">Restore Defaults (ohne WLAN/MQTT)</button>
-                    <button type="submit" name="action" value="delete_espnow" class="btn btn-secondary" style="width:100%; border-color: rgba(239, 68, 68, 0.4); color: #f87171;">Delete ESPNOW connections</button>
-                    <button type="button" id="complete-reset-btn" class="btn btn-danger" style="width:100%;">Complete Reset</button>
+                    <button type="submit" name="action" value="defaults" class="btn btn-secondary" data-i18n="btn_defaults" style="width:100%;">Restore Defaults (ohne WLAN/MQTT)</button>
+                    <button type="submit" name="action" value="delete_espnow" class="btn btn-secondary" data-i18n="btn_del_espnow" style="width:100%; border-color: rgba(239, 68, 68, 0.4); color: #f87171;">Delete ESPNOW connections</button>
+                    <button type="button" id="complete-reset-btn" class="btn btn-danger" data-i18n="btn_complete_reset" style="width:100%;">Complete Reset</button>
                     <input type="hidden" name="action" id="reset-action" value="">
                 </div>
             </form>
@@ -6456,41 +6807,216 @@ void handleSettingsPage() {
     </div>
 
     <script>
-        const PANEL_INFOS = {
-            // [13] WLAN Verbindung
-            13: "<b>Wi-Fi Verbindung</b><br>Konfiguration des lokalen WLAN-Netzwerks (SSID, Passwort), Web-Passwortschutz und RF-Sendeleistung.",
-            
-            // [14] MQTT Konfiguration
-            14: "<b>MQTT Konfiguration</b><br>Parameter für den MQTT-Broker (Server, Port, Anmeldedaten, Gerätename und Sendeintervall).",
-            
-            // [15] ESPNOW Einstellungen
-            15: "<b>ESP-NOW Funknetzwerk</b><br>Rollenkonfiguration (Master/Slave), Funkkanal, Pairing-Steuerung und Verbindungsverlust-Verhalten.",
-            
-            // [16] Buzzer Test
-            16: "<b>Buzzer Test</b><br>Akustischer Funktionstest des Onboard-Piezo-Lautsprechers (lokal und über Funk auf gekoppeltem Slave).",
-            
-            // [17] System & Anzeige
-            17: "<b>System & Anzeige</b><br>Display-Helligkeit mit Gamma-2.2-Dimmung, Servo-Update-Intervall und WLAN-Verbindungswatchdog.",
-            
-            // [18] System Status
-            18: "<b>System Status</b><br>Diagnoseübersicht mit aktueller IP-Adresse, Display-Modus, RSSI-Signalstärke und automatischem Wochen-Reboot.",
-            
-            // [19] Geräte-Management
-            19: "<b>Geräte-Management</b><br>Firmware & OTA-Update, Geräte-Neustart, Werkseinstellungen und vollständiger System-Reset.",
-            
-            // [21] Servo Laufleistung & Odometer
-            21: "<b>Servo Laufleistung &amp; Odometer</b><br>Präziser Wegstreckenzähler für den Lüftungsrotor (Hebelarm r=27mm). Berechnet kumulierte Fahrstrecke und Lebensdauer (100% = 50 km). Gesichert über Dual-Storage (LittleFS + NVS)."
+        const i18n = {
+            de: {
+                settings_title: "Einstellungen",
+                sec_wifi: "WLAN Verbindung",
+                lbl_wifi_ssid: "Netzwerk (SSID)",
+                lbl_wifi_pass: "Wi-Fi Passwort",
+                lbl_wifi_tx: "Sendeleistung (RF TX Power)",
+                opt_tx_78: "19.5 dBm (Maximum - Risiko!)",
+                opt_tx_68: "17.0 dBm (Hoch - Risiko!)",
+                opt_tx_60: "15.0 dBm (Mittel - Warnung)",
+                opt_tx_52: "13.0 dBm (Standard - Empfohlen)",
+                opt_tx_44: "11.0 dBm (Sehr Niedrig)",
+                opt_tx_34: "8.5 dBm (Minimum)",
+                lbl_web_pass: "Webinterface Passwort (Optional)",
+                hint_web_pass: "Freilassen für freien Lesezugriff. Sobald ein Passwort eingetragen ist, schützt es Konsolen &amp; Einstellungen.",
+                sec_mqtt: "MQTT Konfiguration",
+                lbl_mqtt_server: "MQTT Broker Adresse",
+                lbl_mqtt_port: "MQTT Port",
+                lbl_mqtt_user: "MQTT Benutzername",
+                lbl_mqtt_pass: "MQTT Passwort",
+                lbl_mqtt_dev: "Gerätename (HA Discovery Name)",
+                lbl_mqtt_interval: "MQTT Sende-Intervall:",
+                sec_espnow: "ESPNOW",
+                lbl_espnow_role: "Status / Rolle",
+                opt_role_disabled: "Deaktiviert",
+                opt_role_master: "Master",
+                opt_role_slave: "Slave",
+                lbl_espnow_chan: "Kanal (nur für Slave relevant)",
+                lbl_espnow_peer: "Partner MAC-Adresse",
+                hint_espnow_scan: "Leer lassen für automatischen Scan",
+                lbl_espnow_failsafe: "Connection-Loss Fail-Safe (Slave)",
+                failsafe_no_sensor: "(Kein Sensor angeschlossen! -> Notfall 50% erzwungen)<br>Bei Bedarf BME280 oder SHT31 anschließen<br>Und dann nochmal hier im Menu aktivieren.",
+                opt_failsafe_0: "50% Rotor-Position (Notfall-Öffnung)",
+                opt_failsafe_1: "Lokale Steuerung (Slave Poti A & Sensor)",
+                hint_failsafe: "Verhalten des Slaves bei Verbindungsverlust (>60s) zum Master",
+                lbl_espnow_status: "Verbindungs-Status",
+                btn_pairing_start: "Pairing starten",
+                btn_pairing_stop: "Pairing abbrechen",
+                sec_buzzer: "Buzzer Test",
+                btn_buzz_local: "Lokal abspielen",
+                btn_buzz_remote: "Remote abspielen",
+                sec_odometer: "Servo Laufleistung &amp; Odometer",
+                lbl_odo_total: "Gesamtweg:",
+                btn_odo_save: "Ändern",
+                lbl_odo_life: "Lebensdauer-Status (50 km Basis):",
+                hint_odo: "Berechnung: Hebelarm r=27mm (0.471 mm/&deg;) &bull; Nenn-Lebensdauer: 50.000 m (Dual-Storage Flash &amp; NVS)",
+                sec_sys_status: "System Status",
+                lbl_sys_ip: "IP-Adresse:",
+                lbl_sys_mode: "Anzeige-Modus:",
+                lbl_sys_rssi: "Signalstärke RSSI:",
+                lbl_sys_wd: "Watchdog reset weekly:",
+                sec_sys_disp: "System &amp; Anzeige",
+                lbl_disp_bright: "Display-Helligkeit:",
+                hint_gamma: "Natürliches Dimmverhalten über Gamma 2.2 Korrektur",
+                lbl_servo_int: "Servo Update-Intervall:",
+                lbl_wlan_trap: "WLAN connection watchdog time:",
+                btn_save: "Speichern",
+                btn_back: "Zurück",
+                sec_dev_mgmt: "Geräte-Management",
+                btn_ota: "Firmware &amp; OTA Update",
+                btn_reboot: "Reboot Device",
+                btn_reboot_linked: "Reboot linked Device",
+                btn_defaults: "Restore Defaults (ohne WLAN/MQTT)",
+                btn_del_espnow: "Delete ESPNOW connections",
+                btn_complete_reset: "Complete Reset",
+                btn_reset_confirm: "Sicher? Alle Daten löschen!",
+                minutes_suffix: " Minuten",
+                seconds_suffix: " Sekunden",
+                disabled_text: " (deaktiviert)"
+            },
+            en: {
+                settings_title: "Settings",
+                sec_wifi: "Wi-Fi Connection",
+                lbl_wifi_ssid: "Network (SSID)",
+                lbl_wifi_pass: "Wi-Fi Password",
+                lbl_wifi_tx: "Transmission Power (RF TX Power)",
+                opt_tx_78: "19.5 dBm (Maximum - Risk!)",
+                opt_tx_68: "17.0 dBm (High - Risk!)",
+                opt_tx_60: "15.0 dBm (Medium - Warning)",
+                opt_tx_52: "13.0 dBm (Standard - Recommended)",
+                opt_tx_44: "11.0 dBm (Very Low)",
+                opt_tx_34: "8.5 dBm (Minimum)",
+                lbl_web_pass: "Web Interface Password (Optional)",
+                hint_web_pass: "Leave empty for public read access. Setting a password protects consoles &amp; settings.",
+                sec_mqtt: "MQTT Configuration",
+                lbl_mqtt_server: "MQTT Broker Address",
+                lbl_mqtt_port: "MQTT Port",
+                lbl_mqtt_user: "MQTT Username",
+                lbl_mqtt_pass: "MQTT Password",
+                lbl_mqtt_dev: "Device Name (HA Discovery Name)",
+                lbl_mqtt_interval: "MQTT Publish Interval:",
+                sec_espnow: "ESPNOW",
+                lbl_espnow_role: "Status / Role",
+                opt_role_disabled: "Disabled",
+                opt_role_master: "Master",
+                opt_role_slave: "Slave",
+                lbl_espnow_chan: "Channel (Slave only)",
+                lbl_espnow_peer: "Partner MAC Address",
+                hint_espnow_scan: "Leave empty for automatic scan",
+                lbl_espnow_failsafe: "Connection-Loss Fail-Safe (Slave)",
+                failsafe_no_sensor: "(No sensor connected! -> Emergency 50% enforced)<br>Connect BME280 or SHT31 if needed<br>and then re-enable here in menu.",
+                opt_failsafe_0: "50% Rotor Position (Emergency Opening)",
+                opt_failsafe_1: "Local Control (Slave Dial A & Sensor)",
+                hint_failsafe: "Slave behavior when link to master is lost (>60s)",
+                lbl_espnow_status: "Connection Status",
+                btn_pairing_start: "Start Pairing",
+                btn_pairing_stop: "Cancel Pairing",
+                sec_buzzer: "Buzzer Test",
+                btn_buzz_local: "Play Locally",
+                btn_buzz_remote: "Play Remote",
+                sec_odometer: "Servo Mileage &amp; Odometer",
+                lbl_odo_total: "Total Travel:",
+                btn_odo_save: "Save",
+                lbl_odo_life: "Lifespan Status (50 km baseline):",
+                hint_odo: "Calculation: Lever arm r=27mm (0.471 mm/&deg;) &bull; Rated lifespan: 50,000 m (Dual-Storage Flash &amp; NVS)",
+                sec_sys_status: "System Status",
+                lbl_sys_ip: "IP Address:",
+                lbl_sys_mode: "Display Mode:",
+                lbl_sys_rssi: "Signal Strength RSSI:",
+                lbl_sys_wd: "Watchdog reset weekly:",
+                sec_sys_disp: "System &amp; Display",
+                lbl_disp_bright: "Display Brightness:",
+                hint_gamma: "Natural dimming curve via Gamma 2.2 correction",
+                lbl_servo_int: "Servo Update Interval:",
+                lbl_wlan_trap: "WLAN connection watchdog time:",
+                btn_save: "Save",
+                btn_back: "Back",
+                sec_dev_mgmt: "Device Management",
+                btn_ota: "Firmware &amp; OTA Update",
+                btn_reboot: "Reboot Device",
+                btn_reboot_linked: "Reboot linked Device",
+                btn_defaults: "Restore Defaults (keep Wi-Fi/MQTT)",
+                btn_del_espnow: "Delete ESPNOW connections",
+                btn_complete_reset: "Complete Reset",
+                btn_reset_confirm: "Sure? Erase all data!",
+                minutes_suffix: " Minutes",
+                seconds_suffix: " Seconds",
+                disabled_text: " (disabled)"
+            }
         };
+
+        const PANEL_INFOS_I18N = {
+            de: {
+                13: "<b>Wi-Fi Verbindung</b><br>Konfiguration des lokalen WLAN-Netzwerks (SSID, Passwort), Web-Passwortschutz und RF-Sendeleistung.",
+                14: "<b>MQTT Konfiguration</b><br>Parameter für den MQTT-Broker (Server, Port, Anmeldedaten, Gerätename und Sendeintervall).",
+                15: "<b>ESP-NOW Funknetzwerk</b><br>Rollenkonfiguration (Master/Slave), Funkkanal, Pairing-Steuerung und Verbindungsverlust-Verhalten.",
+                16: "<b>Buzzer Test</b><br>Akustischer Funktionstest des Onboard-Piezo-Lautsprechers (lokal und über Funk auf gekoppeltem Slave).",
+                17: "<b>System & Anzeige</b><br>Display-Helligkeit mit Gamma-2.2-Dimmung, Servo-Update-Intervall und WLAN-Verbindungswatchdog.",
+                18: "<b>System Status</b><br>Diagnoseübersicht mit aktueller IP-Adresse, Display-Modus, RSSI-Signalstärke und automatischem Wochen-Reboot.",
+                19: "<b>Geräte-Management</b><br>Firmware & OTA-Update, Geräte-Neustart, Werkseinstellungen und vollständiger System-Reset.",
+                21: "<b>Servo Laufleistung &amp; Odometer</b><br>Präziser Wegstreckenzähler für den Lüftungsrotor (Hebelarm r=27mm). Berechnet kumulierte Fahrstrecke und Lebensdauer (100% = 50 km). Gesichert über Dual-Storage (LittleFS + NVS)."
+            },
+            en: {
+                13: "<b>Wi-Fi Connection</b><br>Configuration of local Wi-Fi network (SSID, password), web password protection, and RF transmit power.",
+                14: "<b>MQTT Configuration</b><br>Parameters for MQTT broker (server, port, credentials, device discovery name, and publish interval).",
+                15: "<b>ESP-NOW Wireless Mesh</b><br>Role setup (Master/Slave), wireless channel, pairing workflow, and link-loss fail-safe behavior.",
+                16: "<b>Buzzer Test</b><br>Acoustic hardware test of onboard piezo sounder (locally and wirelessly on linked slave unit).",
+                17: "<b>System & Display</b><br>Display brightness with Gamma 2.2 dimming curve, servo update interval, and Wi-Fi connection watchdog.",
+                18: "<b>System Status</b><br>Diagnostic overview with current IP address, display mode, RSSI signal strength, and automated weekly watchdog reboot.",
+                19: "<b>Device Management</b><br>Firmware & OTA update, device reboot, default values restoration, and full system factory reset.",
+                21: "<b>Servo Mileage &amp; Odometer</b><br>Precision travel odometer for ventilation rotor (lever arm r=27mm). Tracks cumulative distance and mechanical lifespan (100% = 50 km). Protected via Dual-Storage (LittleFS + NVS)."
+            }
+        };
+
+        let currentLang = localStorage.getItem('idry_lang') || 'de';
+
+        function setLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem('idry_lang', lang);
+            localStorage.setItem('idry_lang_user_set', '1');
+
+            const btnDe = document.getElementById('lang-btn-de');
+            const btnEn = document.getElementById('lang-btn-en');
+            if (btnDe) btnDe.classList.toggle('active', lang === 'de');
+            if (btnEn) btnEn.classList.toggle('active', lang === 'en');
+
+            const dict = i18n[lang] || i18n.de;
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (dict[key]) {
+                    el.innerHTML = dict[key];
+                }
+            });
+
+            // Refresh sliders labels
+            const intVal = document.getElementById('interval-slider').value;
+            document.getElementById('interval-label').innerText = intVal + dict.minutes_suffix;
+            const servoVal = document.getElementById('servo-interval-slider').value;
+            document.getElementById('servo-interval-label').innerText = servoVal + dict.seconds_suffix;
+            const trapVal = parseInt(document.getElementById('wlan-time-trap-slider').value);
+            if (trapVal === 0) {
+                document.getElementById('wlan-time-trap-label').innerHTML = "0 <span style='color: #ef4444; font-weight: bold;'>" + dict.disabled_text + "</span>";
+            } else {
+                document.getElementById('wlan-time-trap-label').innerHTML = trapVal + dict.seconds_suffix;
+            }
+
+            // Sync language preference with ESP32 Flash (persisted if authenticated)
+            fetch('/api/set_language?lang=' + encodeURIComponent(lang), { method: 'POST' }).catch(() => {});
+        }
 
         let activeBubble = null;
         let activeBubbleBtn = null;
 
         function showInfo(btn, idx) {
             hideInfo();
-            if (!PANEL_INFOS[idx]) return;
+            const infos = PANEL_INFOS_I18N[currentLang] || PANEL_INFOS_I18N.de;
+            if (!infos[idx]) return;
             const bubble = document.createElement('div');
             bubble.className = 'info-bubble';
-            bubble.innerHTML = PANEL_INFOS[idx];
+            bubble.innerHTML = infos[idx];
             btn.parentElement.appendChild(bubble);
             btn.classList.add('active');
             activeBubble = bubble;
@@ -6534,24 +7060,27 @@ void handleSettingsPage() {
         const intervalSlider = document.getElementById('interval-slider');
         const intervalLabel = document.getElementById('interval-label');
         intervalSlider.oninput = function() {
-            intervalLabel.innerText = this.value + " Minuten";
+            const dict = i18n[currentLang] || i18n.de;
+            intervalLabel.innerText = this.value + dict.minutes_suffix;
         }
 
         // Real-time servo update interval slider update
         const servoIntervalSlider = document.getElementById('servo-interval-slider');
         const servoIntervalLabel = document.getElementById('servo-interval-label');
         servoIntervalSlider.oninput = function() {
-            servoIntervalLabel.innerText = this.value + " Sekunden";
+            const dict = i18n[currentLang] || i18n.de;
+            servoIntervalLabel.innerText = this.value + dict.seconds_suffix;
         }
 
         // Real-time WLAN Time Trap slider update
         const trapSlider = document.getElementById('wlan-time-trap-slider');
         const trapLabel = document.getElementById('wlan-time-trap-label');
         trapSlider.oninput = function() {
+            const dict = i18n[currentLang] || i18n.de;
             if (parseInt(this.value) === 0) {
-                trapLabel.innerHTML = this.value + " <span style='color: #ef4444; font-weight: bold;'> (deaktiviert)</span>";
+                trapLabel.innerHTML = this.value + " <span style='color: #ef4444; font-weight: bold;'>" + dict.disabled_text + "</span>";
             } else {
-                trapLabel.innerHTML = this.value + " Sekunden";
+                trapLabel.innerHTML = this.value + dict.seconds_suffix;
             }
         }
 
@@ -6591,9 +7120,10 @@ void handleSettingsPage() {
             fetch(url)
                 .then(r => r.json())
                 .then(data => {
+                    const dict = i18n[currentLang] || i18n.de;
                     if (data.status === 'ok') {
                         pairingActive = !pairingActive;
-                        btn.innerText = pairingActive ? 'Pairing abbrechen' : 'Pairing starten';
+                        btn.innerText = pairingActive ? dict.btn_pairing_stop : dict.btn_pairing_start;
                         if (pairingActive) {
                             btn.classList.add('confirm-step');
                         } else {
@@ -6639,17 +7169,17 @@ void handleSettingsPage() {
                     const lastSeenMs = data.espnow_last_seen_ms;
                     
                     if (role === 0) {
-                        statusDiv.innerText = "ESP-NOW deaktiviert";
+                        statusDiv.innerText = (currentLang === 'en' ? "ESP-NOW disabled" : "ESP-NOW deaktiviert");
                         statusDiv.style.color = "#94a3b8";
                     } else if (lastSeenMs === -1) {
-                        statusDiv.innerText = "Nie gesehen / Keine Verbindung";
+                        statusDiv.innerText = (currentLang === 'en' ? "Never seen / No link" : "Nie gesehen / Keine Verbindung");
                         statusDiv.style.color = "#f87171";
                     } else if (lastSeenMs <= 15000) {
                         const intervalSec = ((data.espnow_interval_ms || 1000) / 1000).toFixed(3);
                         statusDiv.innerText = "Online (HB " + intervalSec + "s)";
                         statusDiv.style.color = "#4ade80";
                     } else {
-                        statusDiv.innerText = "Offline (Kontakt: " + (lastSeenMs / 1000).toFixed(3) + "s)";
+                        statusDiv.innerText = (currentLang === 'en' ? "Offline (Contact: " : "Offline (Kontakt: ") + (lastSeenMs / 1000).toFixed(3) + "s)";
                         statusDiv.style.color = "#f87171";
                     }
                     
@@ -6665,10 +7195,10 @@ void handleSettingsPage() {
                     }
                     
                     if (data.espnow_pv_mismatch) {
+                        pvWarnEl.innerText = (currentLang === 'en' ? "Protocol mismatch detected, please update firmware to matching version." : "Protokoll-Unterschiede erkannt, bitte Firmware updaten auf eine gemeinsame Version.");
                         pvWarnEl.style.display = "block";
                         lastMismatchTime = Date.now();
                     } else {
-                        // Hold the warning visible for at least 2000ms
                         if (!lastMismatchTime || (Date.now() - lastMismatchTime > 2000)) {
                             pvWarnEl.style.display = "none";
                         }
@@ -6720,15 +7250,16 @@ void handleSettingsPage() {
                     
                     pairingActive = data.espnow_pairing || false;
                     const pairBtn = document.getElementById('pair-btn');
+                    const dict = i18n[currentLang] || i18n.de;
                     if (peerMac.length > 0 && !pairingActive) {
                         pairBtn.style.display = 'none';
                     } else {
                         pairBtn.style.display = 'inline-block';
                         if (pairingActive) {
-                            pairBtn.innerText = 'Pairing abbrechen';
+                            pairBtn.innerText = dict.btn_pairing_stop;
                             pairBtn.classList.add('confirm-step');
                         } else {
-                            pairBtn.innerText = 'Pairing starten';
+                            pairBtn.innerText = dict.btn_pairing_start;
                             pairBtn.classList.remove('confirm-step');
                         }
                     }
@@ -6876,6 +7407,7 @@ void handleSettingsPage() {
 
         // Initialize and poll
         toggleEspNowFields();
+        setLanguage(currentLang);
         pollEspNowStatus();
         setInterval(pollEspNowStatus, 250);
 
@@ -6891,14 +7423,15 @@ void handleSettingsPage() {
         let confirmStage = false;
 
         resetBtn.onclick = function() {
+            const dict = i18n[currentLang] || i18n.de;
             if (!confirmStage) {
                 confirmStage = true;
-                resetBtn.innerText = "Sicher? Alle Daten loeschen!";
+                resetBtn.innerText = dict.btn_reset_confirm;
                 resetBtn.classList.add('confirm-step');
                 
                 setTimeout(function() {
                     confirmStage = false;
-                    resetBtn.innerText = "Complete Reset";
+                    resetBtn.innerText = dict.btn_complete_reset;
                     resetBtn.classList.remove('confirm-step');
                 }, 5000);
             } else {
@@ -7469,12 +8002,12 @@ void checkGithubUpdateAsync(bool force) {
 void handleFirmwarePage() {
   if (!isWebAuthenticated()) {
     server.send(401, "text/html",
-                "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Zugriff geschützt</title>"
+                "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Zugriff geschützt / Protected</title>"
                 "<style>body{background:#0f172a;color:white;text-align:center;padding-top:100px;font-family:sans-serif;}</style></head>"
                 "<body><div style='background:#1e293b;padding:30px;border-radius:15px;display:inline-block;'>"
                 "<h1 style='color:#f87171;margin-bottom:15px;'>🔒 Webinterface geschützt</h1>"
-                "<p style='color:#cbd5e1;margin-bottom:20px;'>Für den Zugriff auf das Firmware Update ist eine Anmeldung im Dashboard erforderlich.</p>"
-                "<a href='/' style='color:#38bdf8;'>Zurück zum Dashboard</a></div></body></html>");
+                "<p style='color:#cbd5e1;margin-bottom:20px;'>Für den Zugriff auf das Firmware Update ist eine Anmeldung im Dashboard erforderlich.<br><small style='color:#94a3b8;'>Please log in via the dashboard to access firmware updates.</small></p>"
+                "<a href='/' style='color:#38bdf8;'>Zurück zum Dashboard / Back to Dashboard</a></div></body></html>");
     return;
   }
   checkGithubUpdateAsync(true);
@@ -7510,7 +8043,46 @@ void handleFirmwarePage() {
             max-width: 550px;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
         }
-        h1 { text-align: center; margin-bottom: 20px; font-size: 22px; font-weight: 600; color: #818cf8; }
+        .header-title-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        h1 { font-size: 22px; font-weight: 600; color: #818cf8; margin: 0; }
+        .lang-pill {
+            display: inline-flex;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 9999px;
+            padding: 3px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        }
+        .lang-btn {
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            padding: 4px 10px;
+            font-size: 11.5px;
+            font-weight: 600;
+            border-radius: 9999px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .lang-btn:hover {
+            color: #f8fafc;
+        }
+        .lang-btn.active {
+            background: rgba(56, 189, 248, 0.25);
+            color: #38bdf8;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+            border: 1px solid rgba(56, 189, 248, 0.5);
+        }
         .card {
             background: rgba(15, 23, 42, 0.5);
             border: 1px solid rgba(255, 255, 255, 0.05);
@@ -7545,18 +8117,30 @@ void handleFirmwarePage() {
 </head>
 <body>
     <div class="container">
-        <h1>Firmware & OTA Update</h1>
+        <div class="header-title-container">
+            <h1 data-i18n="fw_title">Firmware &amp; OTA Update</h1>
+            <div class="lang-pill">
+                <button type="button" class="lang-btn active" id="lang-btn-de" onclick="setLanguage('de')" title="Deutsch">
+                    <svg width="14" height="10" viewBox="0 0 16 12" style="border-radius:2px; display:inline-block; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.6);"><rect width="16" height="4" y="0" fill="#111"/><rect width="16" height="4" y="4" fill="#D00"/><rect width="16" height="4" y="8" fill="#FFCE00"/></svg>
+                    <span style="font-size: 10.5px; font-weight: bold; margin-left: 2px;">DE</span>
+                </button>
+                <button type="button" class="lang-btn" id="lang-btn-en" onclick="setLanguage('en')" title="English (US)">
+                    <svg width="14" height="10" viewBox="0 0 16 12" style="border-radius:2px; display:inline-block; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.6);"><rect width="16" height="12" fill="#B22234"/><rect width="16" height="1.85" y="1.85" fill="#FFF"/><rect width="16" height="1.85" y="5.54" fill="#FFF"/><rect width="16" height="1.85" y="9.23" fill="#FFF"/><rect width="7" height="6.5" fill="#3C3B6E"/><circle cx="2.2" cy="2" r="0.6" fill="#fff"/><circle cx="4.8" cy="2" r="0.6" fill="#fff"/><circle cx="3.5" cy="3.5" r="0.6" fill="#fff"/><circle cx="2.2" cy="5" r="0.6" fill="#fff"/><circle cx="4.8" cy="5" r="0.6" fill="#fff"/></svg>
+                    <span style="font-size: 10.5px; font-weight: bold; margin-left: 2px;">EN</span>
+                </button>
+            </div>
+        </div>
         <div class="card">
-            <div class="card-title">Versions-Status</div>
+            <div class="card-title" data-i18n="fw_card_status">Versions-Status</div>
             <div class="info-text">
-                Installierte Version: <strong>)rawhtml";
+                <span data-i18n="fw_lbl_installed">Installierte Version:</span> <strong>)rawhtml";
   html += String(localFirmwareVersion);
   html +=
-      R"rawhtml(</strong> &nbsp;|&nbsp; Aktuellste Version: <strong>)rawhtml";
+      R"rawhtml(</strong> &nbsp;|&nbsp; <span data-i18n="fw_lbl_latest">Aktuellste Version:</span> <strong>)rawhtml";
   if (onlineVersion > 0) {
     html += String(onlineVersion);
   } else {
-    html += "Nicht erreichbar";
+    html += "<span data-i18n=\"fw_not_reachable\">Nicht erreichbar</span>";
   }
   html += R"rawhtml(</strong>
             </div>
@@ -7565,19 +8149,19 @@ void handleFirmwarePage() {
   if (onlineVersion > localFirmwareVersion) {
     html += R"rawhtml(
             <div class="badge-update-avail">
-                ⚡ Neue Firmware-Version )rawhtml";
+                ⚡ <span data-i18n="fw_badge_avail">Neue Firmware-Version auf GitHub verfügbar!</span> (v)rawhtml";
     html += String(onlineVersion);
-    html += R"rawhtml( auf GitHub verfuegbar!
+    html += R"rawhtml()
             </div>
             <a href="/firmware/autoupdate" class="btn btn-update">
-                🚀 Automatisch Online Updaten (v)rawhtml";
+                <span data-i18n="fw_btn_auto">🚀 Automatisch Online Updaten</span> (v)rawhtml";
     html += String(onlineVersion);
     html += R"rawhtml()
             </a>
 )rawhtml";
   } else if (onlineVersion > 0) {
     html += R"rawhtml(
-            <div class="badge-up-to-date">
+            <div class="badge-up-to-date" data-i18n="fw_badge_uptodate">
                 ✓ Deine Firmware ist auf dem neuesten Stand.
             </div>
 )rawhtml";
@@ -7587,39 +8171,101 @@ void handleFirmwarePage() {
         </div>
 
         <div class="card">
-            <div class="card-title">Manuelles Firmware File Flash</div>
-            <p class="info-text">Lokale Firmware-Datei (.bin) auswählen und direkt auf den ESP32 hochladen:</p>
+            <div class="card-title" data-i18n="fw_card_manual">Manuelles Firmware File Flash</div>
+            <p class="info-text" data-i18n="fw_desc_manual">Lokale Firmware-Datei (.bin) auswählen und direkt auf den ESP32 hochladen:</p>
             <form method="POST" action="/firmware/upload" enctype="multipart/form-data" onsubmit="triggerFlashGlow()">
                 <input type="file" name="update" accept=".bin" required>
-                <button type="submit" id="btn-flash-bin" class="btn btn-nav" style="background: rgba(99, 102, 241, 0.2); border-color: rgba(99, 102, 241, 0.4); color: #a5b4fc; transition: all 0.3s ease;">
+                <button type="submit" id="btn-flash-bin" class="btn btn-nav" data-i18n="fw_btn_flash" style="background: rgba(99, 102, 241, 0.2); border-color: rgba(99, 102, 241, 0.4); color: #a5b4fc; transition: all 0.3s ease;">
                     Firmware .bin Flashen
                 </button>
             </form>
         </div>
 
         <div style="display: flex; gap: 10px;">
-            <a href="/settings" class="btn btn-nav" style="flex: 1;">Zurueck zu Settings</a>
-            <a href="/" class="btn btn-nav" style="flex: 1;">Zurueck zum Monitor</a>
+            <a href="/settings" class="btn btn-nav" data-i18n="fw_btn_settings" style="flex: 1;">Zurück zu Einstellungen</a>
+            <a href="/" class="btn btn-nav" data-i18n="fw_btn_monitor" style="flex: 1;">Zurück zum Dashboard</a>
         </div>
     </div>
     <script>
+        const i18n = {
+            de: {
+                fw_title: "Firmware &amp; OTA Update",
+                fw_card_status: "Versions-Status",
+                fw_lbl_installed: "Installierte Version:",
+                fw_lbl_latest: "Aktuellste Version:",
+                fw_not_reachable: "Nicht erreichbar",
+                fw_badge_avail: "Neue Firmware-Version auf GitHub verfügbar!",
+                fw_btn_auto: "🚀 Automatisch Online Updaten",
+                fw_badge_uptodate: "✓ Deine Firmware ist auf dem neuesten Stand.",
+                fw_card_manual: "Manuelles Firmware File Flash",
+                fw_desc_manual: "Lokale Firmware-Datei (.bin) auswählen und direkt auf den ESP32 hochladen:",
+                fw_btn_flash: "Firmware .bin Flashen",
+                fw_btn_settings: "Zurück zu Einstellungen",
+                fw_btn_monitor: "Zurück zum Dashboard",
+                fw_flashing: "⚡ Flashen gestartet..."
+            },
+            en: {
+                fw_title: "Firmware &amp; OTA Update",
+                fw_card_status: "Version Status",
+                fw_lbl_installed: "Installed Version:",
+                fw_lbl_latest: "Latest Online Version:",
+                fw_not_reachable: "Not reachable",
+                fw_badge_avail: "New firmware version available on GitHub!",
+                fw_btn_auto: "🚀 Automatic Online Update",
+                fw_badge_uptodate: "✓ Your firmware is up to date.",
+                fw_card_manual: "Manual Firmware File Flash",
+                fw_desc_manual: "Select local firmware file (.bin) and flash directly to ESP32:",
+                fw_btn_flash: "Flash .bin Firmware",
+                fw_btn_settings: "Back to Settings",
+                fw_btn_monitor: "Back to Dashboard",
+                fw_flashing: "⚡ Flashing started..."
+            }
+        };
+
+        let currentLang = localStorage.getItem('idry_lang') || 'de';
+
+        function setLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem('idry_lang', lang);
+            localStorage.setItem('idry_lang_user_set', '1');
+
+            const btnDe = document.getElementById('lang-btn-de');
+            const btnEn = document.getElementById('lang-btn-en');
+            if (btnDe) btnDe.classList.toggle('active', lang === 'de');
+            if (btnEn) btnEn.classList.toggle('active', lang === 'en');
+
+            const dict = i18n[lang] || i18n.de;
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (dict[key]) {
+                    el.innerHTML = dict[key];
+                }
+            });
+
+            // Sync language preference with ESP32 Flash (persisted if authenticated)
+            fetch('/api/set_language?lang=' + encodeURIComponent(lang), { method: 'POST' }).catch(() => {});
+        }
+
         function triggerFlashGlow() {
             const btn = document.getElementById('btn-flash-bin');
+            const dict = i18n[currentLang] || i18n.de;
             if (btn) {
                 btn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
                 btn.style.borderColor = '#22c55e';
                 btn.style.color = '#ffffff';
                 btn.style.boxShadow = '0 0 20px rgba(34, 197, 94, 0.85), 0 0 35px rgba(34, 197, 94, 0.45)';
-                btn.innerText = '⚡ Flashen gestartet...';
+                btn.innerText = dict.fw_flashing;
                 setTimeout(() => {
                     btn.style.background = 'rgba(99, 102, 241, 0.2)';
                     btn.style.borderColor = 'rgba(99, 102, 241, 0.4)';
                     btn.style.color = '#a5b4fc';
                     btn.style.boxShadow = 'none';
-                    btn.innerText = 'Firmware .bin Flashen';
+                    btn.innerText = dict.fw_btn_flash;
                 }, 3000);
             }
         }
+
+        setLanguage(currentLang);
     </script>
 </body>
 </html>
@@ -7666,7 +8312,46 @@ void handleAutoUpdate() {
             max-width: 600px;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
         }
-        h1 { text-align: center; font-size: 20px; color: #38bdf8; margin-bottom: 15px; font-weight: 600; }
+        .header-title-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+        h1 { font-size: 18px; color: #38bdf8; margin: 0; font-weight: 600; }
+        .lang-pill {
+            display: inline-flex;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 9999px;
+            padding: 3px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        }
+        .lang-btn {
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            padding: 4px 10px;
+            font-size: 11.5px;
+            font-weight: 600;
+            border-radius: 9999px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .lang-btn:hover {
+            color: #f8fafc;
+        }
+        .lang-btn.active {
+            background: rgba(56, 189, 248, 0.25);
+            color: #38bdf8;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+            border: 1px solid rgba(56, 189, 248, 0.5);
+        }
         .progress-bar-bg {
             background: rgba(15, 23, 42, 0.8);
             border: 1px solid rgba(255,255,255,0.1);
@@ -7718,19 +8403,80 @@ void handleAutoUpdate() {
 </head>
 <body>
     <div class="container">
-        <h1>🚀 GitHub OTA Online-Update Terminal</h1>
+        <div class="header-title-container">
+            <h1 data-i18n="ota_title">🚀 GitHub OTA Online-Update Terminal</h1>
+            <div class="lang-pill">
+                <button type="button" class="lang-btn active" id="lang-btn-de" onclick="setLanguage('de')" title="Deutsch">
+                    <svg width="14" height="10" viewBox="0 0 16 12" style="border-radius:2px; display:inline-block; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.6);"><rect width="16" height="4" y="0" fill="#111"/><rect width="16" height="4" y="4" fill="#D00"/><rect width="16" height="4" y="8" fill="#FFCE00"/></svg>
+                    <span style="font-size: 10.5px; font-weight: bold; margin-left: 2px;">DE</span>
+                </button>
+                <button type="button" class="lang-btn" id="lang-btn-en" onclick="setLanguage('en')" title="English (US)">
+                    <svg width="14" height="10" viewBox="0 0 16 12" style="border-radius:2px; display:inline-block; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.6);"><rect width="16" height="12" fill="#B22234"/><rect width="16" height="1.85" y="1.85" fill="#FFF"/><rect width="16" height="1.85" y="5.54" fill="#FFF"/><rect width="16" height="1.85" y="9.23" fill="#FFF"/><rect width="7" height="6.5" fill="#3C3B6E"/><circle cx="2.2" cy="2" r="0.6" fill="#fff"/><circle cx="4.8" cy="2" r="0.6" fill="#fff"/><circle cx="3.5" cy="3.5" r="0.6" fill="#fff"/><circle cx="2.2" cy="5" r="0.6" fill="#fff"/><circle cx="4.8" cy="5" r="0.6" fill="#fff"/></svg>
+                    <span style="font-size: 10.5px; font-weight: bold; margin-left: 2px;">EN</span>
+                </button>
+            </div>
+        </div>
         <div class="progress-bar-bg">
             <div id="progress-fill" class="progress-bar-fill"></div>
             <div id="progress-text" class="progress-text">0%</div>
         </div>
         <div id="console" class="console">
-            <div class="log-line log-header">[SYSTEM] Starte Online-Update von GitHub...</div>
+            <div class="log-line log-header" id="log-start">[SYSTEM] Starte Online-Update von GitHub...</div>
             <div class="log-line">[TARGET] https://raw.githubusercontent.com/VR-addicted/grow-zone-iDry/main/FIRMWARE/firmware.bin</div>
         </div>
-        <a id="back-btn" href="/firmware" class="btn-nav btn-back" style="display: none;">Zurueck zu Firmware Update</a>
+        <a id="back-btn" href="/firmware" class="btn-nav btn-back" data-i18n="ota_back" style="display: none;">Zurück zu Firmware Update</a>
     </div>
 
     <script>
+        const i18n = {
+            de: {
+                ota_title: "🚀 GitHub OTA Online-Update Terminal",
+                ota_back: "Zurück zu Firmware Update",
+                log_start: "[SYSTEM] Starte Online-Update von GitHub...",
+                log_connect: "[CONNECT] Verbinde mit GitHub raw.githubusercontent.com...",
+                log_download: "[DOWNLOAD] Datei FIRMWARE/firmware.bin erfolgreich geladen",
+                log_verify: "[HEADER VERIFY] ESP32 Magic Byte (0xE9) und Header gültig!",
+                log_flash: "[FLASH] Inaktive OTA-Bank (app0/app1) erfolgreich beschrieben!",
+                log_reboot: "[REBOOT] iDry 26 reboot. Stay calm, we are back online in a second :-)",
+                log_error: "[FEHLER] "
+            },
+            en: {
+                ota_title: "🚀 GitHub OTA Online-Update Terminal",
+                ota_back: "Back to Firmware Update",
+                log_start: "[SYSTEM] Starting online update from GitHub...",
+                log_connect: "[CONNECT] Connecting to GitHub raw.githubusercontent.com...",
+                log_download: "[DOWNLOAD] File FIRMWARE/firmware.bin successfully downloaded",
+                log_verify: "[HEADER VERIFY] ESP32 Magic Byte (0xE9) and header valid!",
+                log_flash: "[FLASH] Inactive OTA bank (app0/app1) successfully written!",
+                log_reboot: "[REBOOT] iDry 26 reboot. Stay calm, we are back online in a second :-)",
+                log_error: "[ERROR] "
+            }
+        };
+
+        let currentLang = localStorage.getItem('idry_lang') || 'de';
+
+        function setLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem('idry_lang', lang);
+            localStorage.setItem('idry_lang_user_set', '1');
+
+            const btnDe = document.getElementById('lang-btn-de');
+            const btnEn = document.getElementById('lang-btn-en');
+            if (btnDe) btnDe.classList.toggle('active', lang === 'de');
+            if (btnEn) btnEn.classList.toggle('active', lang === 'en');
+
+            const dict = i18n[lang] || i18n.de;
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (dict[key]) {
+                    el.innerHTML = dict[key];
+                }
+            });
+
+            // Sync language preference with ESP32 Flash (persisted if authenticated)
+            fetch('/api/set_language?lang=' + encodeURIComponent(lang), { method: 'POST' }).catch(() => {});
+        }
+
         const consoleEl = document.getElementById('console');
         const fillEl = document.getElementById('progress-fill');
         const textEl = document.getElementById('progress-text');
@@ -7744,32 +8490,37 @@ void handleAutoUpdate() {
             consoleEl.scrollTop = consoleEl.scrollHeight;
         }
 
-        appendLog('[CONNECT] Verbinde mit GitHub raw.githubusercontent.com...');
+        setLanguage(currentLang);
+        const dict = i18n[currentLang] || i18n.de;
+
+        appendLog(dict.log_connect);
         fillEl.style.width = '20%';
         textEl.innerText = '20%';
 
         fetch('/api/firmware/autoupdate_start')
             .then(r => r.json())
             .then(data => {
+                const d = i18n[currentLang] || i18n.de;
                 if (data.status === 'ok') {
                     fillEl.style.width = '100%';
                     textEl.innerText = '100%';
-                    appendLog('[DOWNLOAD] Datei FIRMWARE/firmware.bin erfolgreich geladen (' + (data.written || 0) + ' Bytes)!', false, true);
-                    appendLog('[HEADER VERIFY] ESP32 Magic Byte (0xE9) und Header gueltig!', false, true);
-                    appendLog('[FLASH] Inaktive OTA-Bank (app0/app1) erfolgreich beschrieben!', false, true);
-                    appendLog('[REBOOT] iDry 26 reboot. Stay calm, we are back online in a second :-)', false, true);
+                    appendLog(d.log_download + ' (' + (data.written || 0) + ' Bytes)!', false, true);
+                    appendLog(d.log_verify, false, true);
+                    appendLog(d.log_flash, false, true);
+                    appendLog(d.log_reboot, false, true);
                     setTimeout(() => { window.location.href = '/'; }, 6000);
                 } else {
                     fillEl.style.width = '0%';
-                    textEl.innerText = 'Fehler';
-                    appendLog('[FEHLER] ' + (data.message || 'Update abgebrochen'), true);
+                    textEl.innerText = (currentLang === 'en' ? 'Error' : 'Fehler');
+                    appendLog(d.log_error + (data.message || 'Update failed'), true);
                     backBtn.style.display = 'block';
                 }
             })
             .catch(err => {
+                const d = i18n[currentLang] || i18n.de;
                 fillEl.style.width = '0%';
-                textEl.innerText = 'Fehler';
-                appendLog('[FEHLER] Verbindungsabbruch beim Flashen: ' + err, true);
+                textEl.innerText = (currentLang === 'en' ? 'Error' : 'Fehler');
+                appendLog(d.log_error + err, true);
                 backBtn.style.display = 'block';
             });
     </script>
@@ -8100,6 +8851,8 @@ void startCaptivePortal() {
   server.on("/api/espnow/pair", handleEspNowPairApi);
   server.on("/api/espnow/buzzer_test", handleBuzzerTestApi);
   server.on("/api/settings/purge", handlePurgeApi);
+  server.on("/api/set_language", HTTP_POST, handleSetLanguageApi);
+  server.on("/api/set_language", HTTP_GET, handleSetLanguageApi);
   server.on("/firmware", handleFirmwarePage);
   server.on("/firmware/autoupdate", handleAutoUpdate);
   server.on("/api/firmware/autoupdate_start", handleAutoUpdateApi);
@@ -8550,6 +9303,8 @@ void setup() {
     server.on("/api/settings/odometer", handleOdometerApi);
     server.on("/api/loglevel", HTTP_POST, handleSetLogLevel);
     server.on("/api/loglevel", HTTP_GET, handleSetLogLevel);
+    server.on("/api/set_language", HTTP_POST, handleSetLanguageApi);
+    server.on("/api/set_language", HTTP_GET, handleSetLanguageApi);
     server.on("/firmware", handleFirmwarePage);
     server.on("/firmware/autoupdate", handleAutoUpdate);
     server.on("/api/firmware/autoupdate_start", handleAutoUpdateApi);

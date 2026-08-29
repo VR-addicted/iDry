@@ -157,6 +157,14 @@ Im Gegensatz zu gewöhnlichen Umluftventilatoren im Trockenzelt (die die Luft nu
 ### 12. HTTP Socket-Teardown & Stabilitäts-Härtung (v113)
 * **Socket Leak Prevention (`Connection: close`):** Alle REST-API-Endpunkte (`/api/data`, `/api/history`) schließen TCP-Sockets unmittelbar nach der Datenübertragung. Verhindert das Überlaufen des LWIP TCP-Socket-Pools bei sekündlichem AJAX-Polling nachhaltig.
 
+### 13. Zweisprachiges Webinterface (🇩🇪 DE / 🇺🇸 EN) & Intelligente Flash-Persistenz (v173-v174)
+* **0ms Verzögerungsfreie Übersetzung (`data-i18n`):** Blitzschnelles Umschalten zwischen Deutsch und US-Englisch auf allen Webseiten (Dashboard `/`, Einstellungen `/settings`, Firmware `/firmware` & OTA-Terminal `/firmware/autoupdate`) ohne Seiten-Reload.
+* **Gestochen scharfe Inline-SVG-Vektorflaggen:** Echte farbintensive Vektorgrafiken (16x12px) für 🇩🇪 **DE** (Schwarz-Rot-Gold) und 🇺🇸 **EN** (Stars & Stripes) im Glas-Pill-Header mit aktivem Cyan-Glow (`#38bdf8`) – 100% unabhängig vom Betriebssystem-Font (keine monochromen Emojis unter Windows).
+* **Bilingualer Grow Advisor & Info-Bubbles:** Alle dynamischen Diagnose-Meldungen, Warnhinweise (Schimmelschutz, Kondensationsgefahr, Heugeruchs-Warnung, Wetter-Trends) und alle 14 detaillierten Hilfe-Bubbles (`PANEL_INFOS_I18N`) sind lückenlos zweisprachig.
+* **Intelligente Authentifizierungs-Speicherung:**
+  * **Nicht eingeloggt:** Die Sprachauswahl bleibt für die aktuelle Session im Browser-`localStorage` gespeichert.
+  * **Eingeloggt (Authentifiziert):** Beim Klick auf die Flagge wird die Sprache automatisch über `POST /api/set_language` in `/config.json` (LittleFS Flash) dauerhaft als Geräte-Standard gesichert. Neu verbindende Browser und Geräte starten somit automatisch in der gespeicherten Wunschsprache.
+
 ---
 
 ## 🏗️ Hardware-Ausbaustufen (Skalierbarkeit)

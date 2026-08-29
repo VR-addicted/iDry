@@ -181,6 +181,26 @@ Do not change SPI, I2C, ADC, or actuator pin assignments:
   - Caches in RAM; flushes hourly to LittleFS (`/config.json`) and NVS (`idry_odo`, magic `0x49445259`) only on movement.
   - Manual calibration via authenticated `POST /api/settings/odometer?meters=...`.
 
+---
+
+## Bilingual Internationalization (🇩🇪 DE / 🇺🇸 EN) & Language Management Rules
+* **Client-Side Translation Engine (`data-i18n`):**
+  - Zero-latency (0ms) instant language switching without server roundtrips or page reload across all views (Dashboard, Modals, Settings, Firmware OTA).
+  - Dictionaries: `const i18n = { de: { ... }, en: { ... } };` and `const PANEL_INFOS_I18N = { de: { ... }, en: { ... } };` covering all 14 help bubbles.
+  - DOM elements mapped via `[data-i18n="key"]`.
+* **High-DPI Inline SVG Vector Flag Icons:**
+  - Header flag selector `.lang-pill` uses inline SVG vector graphics for German (Schwarz-Rot-Gold) and US (Stars & Stripes) flags with active Cyan glow (`#38bdf8`) to ensure 100% platform-independent color rendering without monochrome font emoji degradation on Windows.
+* **Bilingual Grow Advisor Ringbuffer:**
+  - `advisorRingBuffer` entries store dual-language payloads (`badgeDe`/`badgeEn`, `textDe`/`textEn`).
+  - Real-time ticker scroller and modal speech bubble re-render dynamically on active language change.
+* **Dynamic Telemetry Formatting & Language Consistency:**
+  - All dynamically populated strings in `updateData()` (e.g. Potentiometer labels `Target Humidity (A):`, `Strictly CLOSED/OPEN`, Purge Timer `Off`/`🔥 100% OPEN (Xs)`, ESP-NOW status `EMERGENCY`/`No Connection`) MUST strictly check `currentLang === 'en'` to prevent overwriting translations during 1-second telemetry polling.
+* **Smart Authenticated Flash Persistence (`/api/set_language`):**
+  - Unauthenticated users: Language selection is saved client-side in `localStorage.setItem('idry_lang', lang)`.
+  - Authenticated users (logged in): Changing language sends `POST /api/set_language?lang=de|en` to the ESP32 backend. The firmware verifies `isWebAuthenticated()`, updates `sysConfig.web_language`, and permanently persists the choice to LittleFS (`/config.json`).
+  - First-time connecting devices/browsers automatically default to the device's Flash-configured `web_language`.
+
+
 
 
 

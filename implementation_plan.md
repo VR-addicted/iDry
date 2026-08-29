@@ -1,54 +1,65 @@
-# Implementation Plan - Display Backlight Auto-Dimmer, Servo Odometer & Settings Reorganization (Build v163)
+# Implementation Plan: Bilingual Web Interface (🇩🇪 DE / 🇺🇸 EN) & Authenticated Flash Persistence
 
-Intelligent light-sensor-based display power saving, a persistent wear-leveled Servo Odometer engine with live calibration controls, and an optimized `/settings` panel layout hierarchy.
-
----
-
-## 🛠️ Architecture & Delivered Specifications
-
-### 1. Display Backlight Auto-Dimmer (TFT Light-Sensor Control)
-- **Sensor Presence Detection:**
-  - If **NO light sensor** (TSL2561) is connected/active: Backlight follows user-configured brightness (0–100%) in Settings.
-  - If **AT LEAST ONE light sensor** is active:
-    - If ANY active sensor reads **$> 200\text{ Lux}$**: Display Backlight turns **ON** at configured brightness (`sysConfig.display_brightness`).
-    - If ALL active sensors read **$\le 200\text{ Lux}$** continuously for **$> 3\text{ seconds}$** (3s debounce filter against temporary shadows): Backlight turns **COMPLETELY OFF ($0\%$)** to prevent room light pollution and conserve power.
-    - Threshold of $200\text{ Lux}$ ensures no recursive feedback loop between TFT backlight and ambient sensor.
-
-### 2. Servo Odometer Engine & Wear-Leveling Persistence
-- **Kinematic Calculation ($r = 27\text{ mm}$ gear radius):**
-  - Arc length per degree: $\Delta d = \frac{\pi \cdot 27\text{ mm}}{180^\circ} \approx 0.00047124\text{ m/deg}$.
-  - Every angular step adds to `servoTotalMeters`.
-  - Nominal 100% lifetime baseline: **$50,000\text{ m}$ ($50\text{ km}$)**.
-  - Lifetime percentage: $\text{Lifetime \%} = \min\left(100.00, \frac{\text{servoTotalMeters}}{50000} \times 100\right)$ (displayed with 2 decimal places, e.g. `1.42 %`).
-- **Dual-Storage Persistence (LittleFS + NVS Mirroring):**
-  - **RAM Caching:** Accumulated in RAM and only committed to Flash once per hour (and only if actual movement occurred).
-  - **Dual Mirroring:**
-    1. Saved in LittleFS (`/config.json`).
-    2. Mirrored to ESP32 NVS partition (`Preferences.h`, namespace `idry_odo`) with Magic Word `0x49445259` (`IDRY`).
-  - **Boot Recovery:** Reads both LittleFS and NVS. If a discrepancy exists (e.g. after a partial flash wipe), the higher valid number wins and re-synchronizes both storage layers.
-
-### 3. Settings UI Panel (`/settings`) & Layout Hierarchy
-- **Optimized Natural Flow:**
-  1. **Wi-Fi Verbindung**
-  2. **MQTT Konfiguration**
-  3. **ESP-NOW Funknetzwerk**
-  4. **Buzzer Test**
-  5. **Servo Laufleistung & Odometer** *(placed directly below Buzzer Test with `ℹ`-Info Button Index 21)*
-  6. **System Status** *(placed directly above System & Anzeige)*
-  7. **System & Anzeige**
-  8. **Save & Back Buttons** *(placed at the bottom of the configuration cards, right above Geräte-Management)*
-  9. **Geräte-Management** (Firmware & OTA, Reboot, Reset)
-- **Live Editable Input Field & Instant Bar Update:**
-  - Typing in the input field calculates and updates the dual-tone blue progress bar (`#0284c7` to `#38bdf8`) and percentage label immediately.
-  - AJAX polling on that input temporarily pauses while editing to prevent input overwriting.
-  - `Ändern` button submits `POST /api/settings/odometer?meters=...`. Setting `0` resets the odometer; entering an existing value restores previous mileage.
-
-### 4. Boot Safety & Network Decoupling
-- ESP-NOW packet streaming (`sendEspNowLogLine`) is guarded by `isEspNowInitialized` to prevent dereferencing uninitialized driver structures during early boot.
-- NVS initialization opens in read-write mode to prevent `nvs_open` errors on fresh boards.
+Implement complete bilingual internationalization across the entire **iDRY-26 Web Application** (Dashboard, Modals, Info Bubbles, Settings, and OTA Firmware pages) with zero-latency client-side switching, platform-independent inline SVG flag icons, and permanent Flash memory persistence for authenticated sessions.
 
 ---
 
-## 🧪 Verification & Build Status
-- PlatformIO Build: `SUCCESS` (Code 0, RAM: 29.7%, Flash: 21.9%).
-- Firmware bundle updated in `FIRMWARE/` (v163).
+## Architecture Overview
+
+```mermaid
+flowchart TD
+    A[User clicks Flag Pill DE/EN] --> B{Authenticated Session?}
+    B -- Yes (Logged In) --> C[POST /api/set_language?lang=xx]
+    C --> D[Save web_language to /config.json LittleFS Flash]
+    B -- No (Guest) --> E[Store in browser localStorage]
+    A --> F[0ms DOM Translation via data-i18n]
+    A --> G[Translate Live Grow Advisor Ticker & Speech Bubbles]
+    A --> H[Translate Dynamic Telemetry in updateData]
+```
+
+---
+
+## User Review & Design Decisions
+
+- **Two Languages Standard:** Deutsch (🇩🇪 DE) and US English (🇺🇸 EN).
+- **Inline SVG Flag Icons:** Avoids Windows monochrome emoji fallback (`DE DE` / `US EN`) by using crisp, colorful, lightweight inline SVG graphics (16x12px).
+- **Flash vs. Session Storage:**
+  - Guests/unauthenticated users have their language stored in `localStorage`.
+  - Authenticated users automatically synchronize their choice to the ESP32's LittleFS Flash memory (`/config.json`) so newly connecting clients default to the configured language.
+
+---
+
+## Implemented Changes
+
+### 1. Backend Core & Configuration (`src/main.cpp`)
+- Added `char web_language[8] = "de";` to `struct Config`.
+- Updated `loadConfiguration()` and `saveConfiguration()` to read and persist `web_language`.
+- Added `web_language` to `/api/data` JSON telemetry payload.
+- Added API endpoint `/api/set_language` (supporting `HTTP_POST` & `HTTP_GET`) guarded by `isWebAuthenticated()`.
+
+### 2. High-DPI Inline SVG Glass Pill Header
+- Standardized `.lang-pill` on:
+  - **Dashboard Monitor (`/`)**
+  - **Settings Management (`/settings`)**
+  - **Firmware Update (`/firmware`)**
+  - **GitHub Online OTA Terminal (`/firmware/autoupdate`)**
+- Uses exact SVG vector definitions for Schwarz-Rot-Gold (🇩🇪) and Stars & Stripes (🇺🇸) with active Cyan-glow styling (`#38bdf8`).
+
+### 3. Comprehensive Dictionary & Heuristics Translation
+- Full dictionary mapping for:
+  - All **Dashboard Cards**: Strategy buttons, Potentiometers, Rotor & Moon, Stoßlüftung Timer, Sensoren 1 & 2, Light Sensoren 1 & 2, VPD, ESP-NOW, MQTT, System Status.
+  - All **14 Help Bubbles (`PANEL_INFOS_I18N`)**: Complete bilingual coverage (Indices 0–21).
+  - All **Modals**: 24h Zoom Chart, VPD Day Confirm, Remote Reboot, Factory Reset.
+  - **Grow Advisor Engine**: Dual-language payloads (`badgeDe`/`badgeEn`, `textDe`/`textEn`) for all heuristic diagnoses.
+  - **Dynamic Telemetry (`updateData()`)**: Fixed overwrite edge cases for Potentiometers, Purge countdown, and connection status.
+
+---
+
+## Verification & Build Results
+
+- **Compiler:** PlatformIO / ESP32-S3 (Arduino framework)
+- **Build Milestone:** **v174** (17.4 release)
+- **Result:** `[SUCCESS] Exit Code 0`
+- **RAM Usage:** 29.7%
+- **Flash Usage:** 22.7%
+- **Firmware Binary Sync:** `FIRMWARE/firmware.bin` (v174) and `version.txt` auto-synchronized.
