@@ -1517,6 +1517,29 @@ int getVpdAutoCurrentDay() {
   return sysConfig.vpd_auto_day;
 }
 
+int getHysteresisIndoorTemp(float indoorTemp) {
+  static int currentStableTemp = -999;
+  if (isnan(indoorTemp)) return 20;
+  
+  int rounded = (int)round(indoorTemp);
+  if (currentStableTemp == -999) {
+    currentStableTemp = rounded;
+  } else {
+    // 0.20°C Hysteresis deadband around the 0.5°C boundary
+    // To switch up to next degree: must reach (currentStableTemp + 0.60°C)
+    // To switch down to previous degree: must fall below (currentStableTemp - 0.60°C)
+    if (indoorTemp >= (float)currentStableTemp + 0.60f) {
+      currentStableTemp = (int)round(indoorTemp);
+    } else if (indoorTemp <= (float)currentStableTemp - 0.60f) {
+      currentStableTemp = (int)round(indoorTemp);
+    }
+  }
+  
+  if (currentStableTemp < 15) currentStableTemp = 15;
+  if (currentStableTemp > 35) currentStableTemp = 35;
+  return currentStableTemp;
+}
+
 void updateServoRamping(bool updateTarget = false) {
   static bool pendingTargetUpdate = false;
   if (updateTarget) {
@@ -1571,7 +1594,8 @@ void updateServoRamping(bool updateTarget = false) {
     }
     if (isnan(indoorTemp)) indoorTemp = 20.0f; // Default fallback temperature
 
-    int tempIdx = (int)round(indoorTemp) - 15;
+    int stableTemp = getHysteresisIndoorTemp(indoorTemp);
+    int tempIdx = stableTemp - 15;
     if (tempIdx < 0) tempIdx = 0;
     if (tempIdx > 20) tempIdx = 20;
 
@@ -2057,6 +2081,19 @@ void handleGetData() {
   doc["rotor_position"] = rotorPosition;
   doc["servo_angle"] = currentServoAngle;
   doc["bypass_active"] = bypassModeActive;
+
+  float currentIndoorTemp = NAN;
+  if (tempSensors[0].active && !isnan(tempSensors[0].temperature)) {
+    currentIndoorTemp = tempSensors[0].temperature;
+  } else if (tempSensors[1].active && !isnan(tempSensors[1].temperature)) {
+    currentIndoorTemp = tempSensors[1].temperature;
+  }
+  if (!isnan(currentIndoorTemp)) {
+    doc["indoor_temp"] = currentIndoorTemp;
+    doc["indoor_temp_rounded"] = getHysteresisIndoorTemp(currentIndoorTemp);
+  } else {
+    doc["indoor_temp_rounded"] = 20;
+  }
 
   bool isSlaveConnected =
       (sysConfig.espnow_role == 2 && lastEspNowRxTime != 0 &&
@@ -4276,19 +4313,21 @@ void handlePortalRoot() {
         function stopHeatmapInspection() {
             if (isInspectingHeatmap) {
                 isInspectingHeatmap = false;
-                let tempR = (latestData && latestData.indoor_temp_rounded) ? latestData.indoor_temp_rounded : 20;
+                let tempR = (latestData && latestData.indoor_temp_rounded !== undefined) ? latestData.indoor_temp_rounded : ((latestData && latestData.sensors && latestData.sensors[0] && latestData.sensors[0].temperature !== undefined && latestData.sensors[0].temperature !== null) ? Math.round(latestData.sensors[0].temperature) : 20);
                 renderVpdAutoTimeline(currentVpdAutoActiveDay, tempR);
             }
         }
 
         function renderVpdAutoTimeline(activeDay, activeTemp) {
             currentVpdAutoActiveDay = activeDay;
-            let tempR = (activeTemp !== undefined) ? activeTemp : ((latestData && latestData.indoor_temp_rounded) ? latestData.indoor_temp_rounded : 20);
+            let tempR = (activeTemp !== undefined) ? activeTemp : ((latestData && latestData.indoor_temp_rounded !== undefined) ? latestData.indoor_temp_rounded : ((latestData && latestData.sensors && latestData.sensors[0] && latestData.sensors[0].temperature !== undefined && latestData.sensors[0].temperature !== null) ? Math.round(latestData.sensors[0].temperature) : 20));
             let tIdx = Math.round(tempR) - 15;
             if (tIdx < 0) tIdx = 0;
             if (tIdx > 20) tIdx = 20;
 
-            renderVpdHeatmapCanvas(activeDay, tempR);
+            if (!isInspectingHeatmap || activeTemp !== undefined) {
+                renderVpdHeatmapCanvas(activeDay, tempR);
+            }
 
             let container = document.getElementById('vpd-auto-timeline');
             if (!container) return;
@@ -4695,7 +4734,7 @@ void handlePortalRoot() {
                             if (hlBox) hlBox.style.display = 'block';
                             if (vpdAutoBox) vpdAutoBox.style.display = 'block';
                             
-                            let tempR = data.indoor_temp_rounded || 20;
+                            let tempR = (data.indoor_temp_rounded !== undefined) ? data.indoor_temp_rounded : ((data.sensors && data.sensors[0] && data.sensors[0].temperature !== undefined && data.sensors[0].temperature !== null) ? Math.round(data.sensors[0].temperature) : 20);
                             if (potiALabel) potiALabel.innerText = 'AUTO VPD (Tag ' + vpdAutoDay + ' @ ' + tempR + '°C):';
                             if (hygroLim === 80) { if (hl80) hl80.checked = true; }
                             else if (hygroLim === 75) { if (hl75) hl75.checked = true; }
@@ -4707,7 +4746,9 @@ void handlePortalRoot() {
                             let displayA = targetVpd.toFixed(2) + " kPa";
                             document.getElementById('poti-a').innerText = displayA;
 
-                            renderVpdAutoTimeline(vpdAutoDay);
+                            if (!isInspectingHeatmap) {
+                                renderVpdAutoTimeline(vpdAutoDay, tempR);
+                            }
 
                             let calcSollEl = document.getElementById('calc-soll-rh');
                             let calcNoticeEl = document.getElementById('calc-limit-notice');
