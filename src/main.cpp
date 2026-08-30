@@ -7958,9 +7958,12 @@ int fetchGithubFirmwareVersion() {
   client.setInsecure(); // Disable SSL cert check for ESP32 GitHub requests
   HTTPClient http;
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  http.setTimeout(4000);
-  String url = "https://raw.githubusercontent.com/VR-addicted/grow-zone-iDry/main/FIRMWARE/version.txt?nocache=" + String(millis());
+  http.setTimeout(7000);
+  String url = "https://raw.githubusercontent.com/VR-addicted/grow-zone-iDry/main/FIRMWARE/version.txt?_ts=" + String(micros()) + "&_rnd=" + String(random(10000, 99999));
   if (http.begin(client, url.c_str())) {
+    http.addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    http.addHeader("Pragma", "no-cache");
+    http.addHeader("Expires", "0");
     int httpCode = http.GET();
     if (httpCode == HTTP_CODE_OK) {
       String payload = http.getString();
@@ -8241,7 +8244,7 @@ void handleFirmwarePage() {
                 <span data-i18n="fw_lbl_installed">Installierte Version:</span> <strong>)rawhtml";
   html += String(localFirmwareVersion);
   html +=
-      R"rawhtml(</strong> &nbsp;|&nbsp; <span data-i18n="fw_lbl_latest">Aktuellste Version:</span> <strong>)rawhtml";
+      R"rawhtml(</strong> &nbsp;|&nbsp; <span data-i18n="fw_lbl_latest">Aktuellste Version:</span> <strong id="online-ver-txt">)rawhtml";
   if (onlineVersion > 0) {
     html += String(onlineVersion);
   } else {
@@ -8249,16 +8252,17 @@ void handleFirmwarePage() {
   }
   html += R"rawhtml(</strong>
             </div>
+            <div id="fw-update-btn-container">
 )rawhtml";
 
   if (onlineVersion > localFirmwareVersion) {
     html += R"rawhtml(
-            <div class="badge-update-avail">
+            <div class="badge-update-avail" id="fw-badge-avail">
                 ⚡ <span data-i18n="fw_badge_avail">Neue Firmware-Version auf GitHub verfügbar!</span> (v)rawhtml";
     html += String(onlineVersion);
     html += R"rawhtml()
             </div>
-            <a href="/firmware/autoupdate" class="btn btn-update">
+            <a href="/firmware/autoupdate" class="btn btn-update" id="fw-btn-auto-link">
                 <span data-i18n="fw_btn_auto">🚀 Automatisch Online Updaten</span> (v)rawhtml";
     html += String(onlineVersion);
     html += R"rawhtml()
@@ -8266,13 +8270,14 @@ void handleFirmwarePage() {
 )rawhtml";
   } else if (onlineVersion > 0) {
     html += R"rawhtml(
-            <div class="badge-up-to-date" data-i18n="fw_badge_uptodate">
+            <div class="badge-up-to-date" id="fw-badge-uptodate" data-i18n="fw_badge_uptodate">
                 ✓ Deine Firmware ist auf dem neuesten Stand.
             </div>
 )rawhtml";
   }
 
   html += R"rawhtml(
+            </div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; margin-bottom:8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top:12px;">
                 <span style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:#94a3b8; font-weight:bold;" data-i18n="fw_changelog_title">Aktuelle Änderungen (GitHub)</span>
                 <span style="font-size:10px; color:#64748b; font-family:monospace;">VR-addicted/grow-zone-iDry</span>
@@ -8566,8 +8571,43 @@ void handleFirmwarePage() {
             }
         }
 
+        async function checkLiveOnlineVersion() {
+            try {
+                const res = await fetch('https://raw.githubusercontent.com/VR-addicted/grow-zone-iDry/main/FIRMWARE/version.txt?_ts=' + Date.now() + '&_rnd=' + Math.random(), {
+                    cache: 'no-store',
+                    headers: {
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                if (!res.ok) return;
+                const txt = (await res.text()).trim();
+                const remoteVer = parseInt(txt);
+                const localVer = )rawhtml";
+  html += String(localFirmwareVersion);
+  html += R"rawhtml(;
+                if (remoteVer > 0) {
+                    const verEl = document.getElementById('online-ver-txt');
+                    if (verEl) verEl.innerText = remoteVer;
+                    const btnContainer = document.getElementById('fw-update-btn-container');
+                    const dict = i18n[currentLang] || i18n.de;
+                    if (remoteVer > localVer && btnContainer) {
+                        btnContainer.innerHTML = `
+                            <div class="badge-update-avail" id="fw-badge-avail">
+                                ⚡ <span data-i18n="fw_badge_avail">${dict.fw_badge_avail}</span> (v${remoteVer})
+                            </div>
+                            <a href="/firmware/autoupdate" class="btn btn-update" id="fw-btn-auto-link">
+                                <span data-i18n="fw_btn_auto">${dict.fw_btn_auto}</span> (v${remoteVer})
+                            </a>
+                        `;
+                    }
+                }
+            } catch(e) {}
+        }
+
         setLanguage(currentLang);
         fetchGitHubCommits();
+        checkLiveOnlineVersion();
     </script>
 </body>
 </html>
