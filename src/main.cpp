@@ -21,7 +21,7 @@
 #include <Update.h>
 #include <WiFiClientSecure.h>
 
-// Firmware Version (automatically incremented on each build via version_increment.py)
+// Firmware Version (automatically incremented on each build via version_increment.py )
 #ifndef BUILD_NUMBER
 #define BUILD_NUMBER 61
 #endif
