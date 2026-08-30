@@ -649,15 +649,13 @@ void onEspNowDataRecv(const uint8_t *mac_addr, const uint8_t *data,
   EspNowMessage msg;
   memcpy(&msg, data, sizeof(EspNowMessage));
 
-  // Track remote protocol version and update rx timestamp from paired peer or
-  // during active pairing
+  // Track remote protocol version and update rx timestamp only from verified partner
   bool isFromPeer = (strlen(sysConfig.espnow_peer_mac) > 0 &&
                      strcasecmp(macStr, sysConfig.espnow_peer_mac) == 0);
-  if (isFromPeer || isPairingActive) {
-    lastEspNowRxTime =
-        millis(); // Refresh RX timestamp for every received packet
+  if (isFromPeer) {
+    lastEspNowRxTime = millis(); // Refresh RX timestamp for every received packet
 
-    if (sysConfig.espnow_role == 2 && isFromPeer) {
+    if (sysConfig.espnow_role == 2) {
       uint8_t curChan = 1;
       wifi_second_chan_t secondChan;
       esp_wifi_get_channel(&curChan, &secondChan);
@@ -671,50 +669,50 @@ void onEspNowDataRecv(const uint8_t *mac_addr, const uint8_t *data,
     }
 
     remoteProtocolVersion = msg.pv;
-    if (msg.pv != localProtocolVersion) {
-      if (!protocolVersionMismatch) {
-        Serial.printf(
-            "[ESP-NOW] Protocol version mismatch! Local: %d, Remote: %d\n",
-            localProtocolVersion, msg.pv);
-        protocolVersionMismatch = true;
-      }
-    } else {
-      protocolVersionMismatch = false;
-    }
+    protocolVersionMismatch = (msg.pv != localProtocolVersion);
   }
 
   // 1. Pairing Beacon (Type 0) -> Received by Slave
   if (msg.type == 0 && sysConfig.espnow_role == 2 &&
-      (isPairingActive || strlen(sysConfig.espnow_peer_mac) == 0)) {
+      (isPairingActive || strlen(sysConfig.espnow_peer_mac) == 0 || lastEspNowRxTime == 0 || (millis() - lastEspNowRxTime > 8000))) {
+    uint8_t curChan = 1;
+    wifi_second_chan_t secondChan;
+    esp_wifi_get_channel(&curChan, &secondChan);
+    if (curChan == 0) curChan = currentPairingChannel;
+
     Serial.printf("[Pairing] Received Master beacon from %s on channel %d!\n",
-                  macStr, currentPairingChannel);
+                  macStr, curChan);
     // Lock channel and peer details
-    sysConfig.espnow_channel = currentPairingChannel;
+    sysConfig.espnow_channel = curChan;
     strlcpy(sysConfig.espnow_peer_mac, macStr,
             sizeof(sysConfig.espnow_peer_mac));
     strlcpy(sysConfig.espnow_lmk, msg.key, sizeof(sysConfig.espnow_lmk));
-
-    // Send response back
-    EspNowMessage response;
-    response.pv = localProtocolVersion;
-    response.type = 1; // Response
-    memset(response.key, 0, sizeof(response.key));
-    response.command = 0;
-    response.value = 0;
 
     // Register temporary master peer info to reply
     esp_now_peer_info_t tempPeer;
     memset(&tempPeer, 0, sizeof(tempPeer));
     memcpy(tempPeer.peer_addr, mac_addr, 6);
-    tempPeer.channel = currentPairingChannel;
+    tempPeer.channel = curChan;
+    tempPeer.ifidx = WIFI_IF_STA;
     tempPeer.encrypt = false;
     if (esp_now_is_peer_exist(mac_addr)) {
       esp_now_del_peer(mac_addr);
     }
     esp_now_add_peer(&tempPeer);
 
-    esp_now_send(mac_addr, (uint8_t *)&response, sizeof(EspNowMessage));
-    delay(200);
+    // Send response burst (3x) back to Master to ensure reliable receipt
+    EspNowMessage response;
+    memset(&response, 0, sizeof(EspNowMessage));
+    response.pv = localProtocolVersion;
+    response.type = 1; // Response
+    strlcpy(response.key, msg.key, sizeof(response.key));
+    response.command = 0;
+    response.value = 0;
+
+    for (int b = 0; b < 3; b++) {
+      esp_now_send(mac_addr, (uint8_t *)&response, sizeof(EspNowMessage));
+      delay(20);
+    }
 
     saveConfiguration();
     isPairingActive = false;
@@ -734,15 +732,33 @@ void onEspNowDataRecv(const uint8_t *mac_addr, const uint8_t *data,
   }
 
   // 2. Pairing Response (Type 1) -> Received by Master
-  else if (msg.type == 1 && sysConfig.espnow_role == 1 && isPairingActive) {
+  else if (msg.type == 1 && sysConfig.espnow_role == 1 && (isPairingActive || strlen(sysConfig.espnow_peer_mac) == 0)) {
     Serial.printf("[Pairing] Received response from Slave %s!\n", macStr);
     strlcpy(sysConfig.espnow_peer_mac, macStr,
             sizeof(sysConfig.espnow_peer_mac));
-    strlcpy(sysConfig.espnow_lmk, proposedLmk, sizeof(sysConfig.espnow_lmk));
+    if (strlen(proposedLmk) > 0) {
+      strlcpy(sysConfig.espnow_lmk, proposedLmk, sizeof(sysConfig.espnow_lmk));
+    } else if (strlen(msg.key) > 0) {
+      strlcpy(sysConfig.espnow_lmk, msg.key, sizeof(sysConfig.espnow_lmk));
+    }
 
     saveConfiguration();
     isPairingActive = false;
     lastEspNowRxTime = millis();
+    lastEspNowTxSuccessTime = millis();
+
+    initEspNow(); // Re-initialize peer
+
+    // Immediately send a Type 2 Ping-Request back to Slave to cement the link
+    EspNowMessage ackMsg;
+    memset(&ackMsg, 0, sizeof(EspNowMessage));
+    ackMsg.pv = localProtocolVersion;
+    ackMsg.type = 2; // Data/Command
+    strlcpy(ackMsg.key, sysConfig.espnow_lmk, sizeof(ackMsg.key));
+    ackMsg.command = 2; // Ping-Request
+    ackMsg.value = rotorPosition;
+    ackMsg.dry_strategy = (uint8_t)sysConfig.dry_strategy;
+    esp_now_send(mac_addr, (uint8_t *)&ackMsg, sizeof(EspNowMessage));
 
     // Play happy arpeggio
     tone(BUZZER_PIN, 523, 100);
@@ -753,15 +769,35 @@ void onEspNowDataRecv(const uint8_t *mac_addr, const uint8_t *data,
     delay(120);
     tone(BUZZER_PIN, 1047, 300);
 
-    initEspNow(); // Re-initialize peer
-    addAppLogEx(1, "[Pairing] SUCCESS! Master paired with Slave MAC: %s, LMK: %s", macStr, proposedLmk);
+    addAppLogEx(1, "[Pairing] SUCCESS! Master paired with Slave MAC: %s, LMK: %s", macStr, sysConfig.espnow_lmk);
   }
 
   // 3. Command/Data (Type 2)
   else if (msg.type == 2) {
-    // Only accept commands from paired peer (case insensitive MAC check)
-    if (strcasecmp(macStr, sysConfig.espnow_peer_mac) == 0) {
+    bool isFromPairedPeer = (strlen(sysConfig.espnow_peer_mac) > 0 && strcasecmp(macStr, sysConfig.espnow_peer_mac) == 0);
+
+    // Auto-heal: If Master is configured as Master, but has no partner MAC stored, adopt incoming Slave packet
+    if (!isFromPairedPeer && sysConfig.espnow_role == 1 && strlen(sysConfig.espnow_peer_mac) == 0) {
+      if ((strlen(sysConfig.espnow_lmk) > 0 && strcmp(msg.key, sysConfig.espnow_lmk) == 0) || strlen(sysConfig.espnow_lmk) == 0) {
+        strlcpy(sysConfig.espnow_peer_mac, macStr, sizeof(sysConfig.espnow_peer_mac));
+        if (strlen(msg.key) > 0) {
+          strlcpy(sysConfig.espnow_lmk, msg.key, sizeof(sysConfig.espnow_lmk));
+        }
+        saveConfiguration();
+        initEspNow();
+        isFromPairedPeer = true;
+        addAppLogEx(1, "[ESP-NOW] Master auto-linked Slave MAC: %s", macStr);
+      }
+    }
+
+    if (isFromPairedPeer) {
       lastEspNowRxTime = millis();
+      if (isPairingActive) {
+        isPairingActive = false;
+        if (sysConfig.espnow_role == 2) {
+          esp_wifi_set_channel(sysConfig.espnow_channel, WIFI_SECOND_CHAN_NONE);
+        }
+      }
       if (msg.command == 1) {
         playWinnerMelody();
       } else if (msg.command == 2) {
@@ -7525,11 +7561,8 @@ void handleSettingsPage() {
                     if (data.espnow_pv_mismatch) {
                         pvWarnEl.innerText = (currentLang === 'en' ? "Protocol mismatch detected, please update firmware to matching version." : "Protokoll-Unterschiede erkannt, bitte Firmware updaten auf eine gemeinsame Version.");
                         pvWarnEl.style.display = "block";
-                        lastMismatchTime = Date.now();
                     } else {
-                        if (!lastMismatchTime || (Date.now() - lastMismatchTime > 2000)) {
-                            pvWarnEl.style.display = "none";
-                        }
+                        pvWarnEl.style.display = "none";
                     }
                     
                     const roleSelect = document.getElementById('espnow_role');
@@ -7792,10 +7825,10 @@ void handleSettingsSave() {
   int outbound_val = server.hasArg("outbound_internet") ? server.arg("outbound_internet").toInt() : sysConfig.outbound_internet;
   if (outbound_val < 0 || outbound_val > 1) outbound_val = 0;
 
-  int esp_role = server.arg("espnow_role").toInt();
-  int esp_channel = server.arg("espnow_channel").toInt();
-  int esp_failsafe = server.arg("espnow_failsafe_mode").toInt();
-  String esp_peer_mac = server.arg("espnow_peer_mac");
+  int esp_role = server.hasArg("espnow_role") ? server.arg("espnow_role").toInt() : sysConfig.espnow_role;
+  int esp_channel = server.hasArg("espnow_channel") ? server.arg("espnow_channel").toInt() : sysConfig.espnow_channel;
+  int esp_failsafe = server.hasArg("espnow_failsafe_mode") ? server.arg("espnow_failsafe_mode").toInt() : sysConfig.espnow_failsafe_mode;
+  String esp_peer_mac = server.hasArg("espnow_peer_mac") ? server.arg("espnow_peer_mac") : String(sysConfig.espnow_peer_mac);
   esp_peer_mac.trim();
   esp_peer_mac.toUpperCase();
 
@@ -8155,6 +8188,8 @@ void handleEspNowPairApi() {
                   "zuerst auswaehlen.\"}");
       return;
     }
+
+    saveConfiguration();
 
     // Dynamically initialize ESP-NOW for the selected role
     initEspNow();
