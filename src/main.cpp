@@ -3399,7 +3399,7 @@ void handlePortalRoot() {
             </details>
         </div>
         <div class="footer" style="display: flex; justify-content: space-between; align-items: center; margin-top: 25px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05);">
-            <span id="footer-text">iDRY26 <span id="footer-fw-ver">--</span> - (bench: <span id="footer-bench" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> loops/s | heap: <span id="footer-heap" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> KB | alloc: <span id="footer-alloc" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> KB)</span>
+            <span id="footer-text"><a href="https://github.com/VR-addicted/iDry" target="_blank" style="color: inherit; text-decoration: none; font-weight: bold;"><b>iDRY26</b></a> <span id="footer-fw-ver">--</span> - (bench: <span id="footer-bench" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> loops/s | heap: <span id="footer-heap" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> KB | alloc: <span id="footer-alloc" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> KB)</span>
             <a href="/settings" id="footer-settings-link" style="color: #818cf8; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-weight: 600; padding: 6px 12px; background: rgba(129, 140, 248, 0.1); border-radius: 8px; border: 1px solid rgba(129, 140, 248, 0.2); transition: all 0.2s;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l-.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                 <span data-i18n="settings">Einstellungen</span>
@@ -6153,7 +6153,7 @@ void handlePortalRoot() {
 
             <button type="submit" class="btn">Speichern & Verbinden</button>
         </form>
-        <div class="footer">IDRY26 IoT Device Config Portal</div>
+        <div class="footer"><a href="https://github.com/VR-addicted/iDry" target="_blank" style="color: inherit; text-decoration: none; font-weight: bold;"><b>iDRY26</b></a> IoT Device Config Portal</div>
     </div>
 </body>
 </html>
@@ -6989,7 +6989,7 @@ void handleSettingsPage() {
             </div>
         </div>
 
-        <div class="footer" id="footer-text">iDRY26 v)rawhtml" +
+        <div class="footer" id="footer-text"><a href="https://github.com/VR-addicted/iDry" target="_blank" style="color: inherit; text-decoration: none; font-weight: bold;"><b>iDRY26</b></a> v)rawhtml" +
       String("1.") + String(localFirmwareVersion) +
       R"rawhtml( - (bench: <span id="footer-bench-settings" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> loops/s | heap: <span id="footer-heap-settings" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> KB | alloc: <span id="footer-alloc-settings" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> KB)</div>
     </div>
