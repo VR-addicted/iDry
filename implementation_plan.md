@@ -1,49 +1,52 @@
-# Implementation Plan: Live GitHub Commit Changelog Feed & Rate-Limit Shield (Build v178)
+# Implementation Plan: Air-Gap Privacy Mode ("Paranoid Gardener Mode") [Build v182]
 
-Implement an automated client-side GitHub Commit Changelog feed on the **Firmware Update Page (`/firmware`)** inside the *VERSIONS-STATUS* panel with 100-commit full history blob fetching, sentence-wide keyword token analysis, 5-minute session caching to protect the 60/h quota, and rate-limit penalty warning banners.
+Implement an explicit Outbound Internet Traffic blocker (Air-Gap Mode) to guarantee 100% privacy for security-conscious users, featuring an interactive Visual Bridge UI card in Settings, safety confirmation popup dialog, transparent listing of all contacted endpoints, and strict suppression of GitHub OTA and public NTP requests.
 
 ---
 
-## Architecture Overview
+## 1. Architectural Architecture & Privacy Flow
 
 ```mermaid
 flowchart TD
-    A[Open /firmware in Browser] --> B{5-min sessionStorage Cache valid?}
-    B -- Yes --> C[Load cached commits without API call]
-    B -- No --> D[Fetch 100 commits via GitHub REST API Blob]
-    D --> E[Inspect x-ratelimit-remaining and x-ratelimit-reset headers]
-    E --> F{Rate limit exhausted or HTTP 403?}
-    F -- Yes --> G[Display Red Penalty Warning Banner with Unlock Clock]
-    F -- No (Low <=10) --> H[Display Amber Notice with Remaining Calls]
-    F -- No (OK) --> I[Cache commits in sessionStorage for 5 minutes]
-    D --> J[Parse Commit Titles & Bodies via Heuristic Keyword Engine]
-    J --> K[Assign Priority Tokens: FIX CORE, FIX UI, FEATURE, DOCS, PERF, FIX]
-    J --> L[Format Date: DD.MM.YYYY for DE / MM/DD/YYYY for EN]
-    L --> M[Render Scrollable Glassmorphism Changelog Box]
-    N[User toggles Language DE/EN] --> M
+    A[Settings: Internet Outbound Traffic] --> B{Outbound Allowed?}
+    B -- "🟢 Erlaubt (Online)" --> C[Full Cloud & OTA Access]
+    C --> C1[GitHub OTA Firmware Checks]
+    C --> C2[GitHub Commit Changelog REST API]
+    C --> C3[Public SNTP Time Sync: pool.ntp.org]
+    
+    B -- "🔴 Geblockt (Air-Gap)" --> D[100% Isolated Local Network]
+    D --> D1[Block fetchGithubFirmwareVersion & checkGithubUpdateAsync]
+    D --> D2[Block Online OTA Auto-Update & Background Tasks]
+    D --> D3[Bypass Public SNTP Sync]
+    D --> D4[Display Warning Banner on /firmware + Link to #airgap-settings]
+    D --> D5[Local Web-UI, MQTT Broker & ESP-NOW Mesh 100% Active]
 ```
 
 ---
 
-## Heuristic Keyword Recognition Priority
+## 2. UI/UX Elements in Settings & Firmware
 
-| Priority | Token / Badge | Trigger Keywords (Anywhere in Commit Message) | Badge Color |
-| :---: | :--- | :--- | :--- |
-| **1** | **`FIX CORE`** | `FIX_CORE`, `KERNEL`, `SENSOR`, `DRIVER`, `BME280`, `SHT31`, `TSL2561`, `ESPNOW`, `ESP-NOW`, `FAILSAFE`, `WATCHDOG`, `NVS`, `LITTLEFS`, `BOOT`, `EEPROM`, `SERVO` | 🔴 Rot (`#f87171` + Glow) |
-| **2** | **`FIX UI`** | `FIX_UI`, `UI`, `WEB`, `HTML`, `CSS`, `DASHBOARD`, `SPARKLINE`, `MODAL`, `POPUP`, `DESIGN`, `FONT`, `FLAG`, `PILL`, `BANNER`, `LAYOUT`, `THEME`, `DROPDOWN`, `I18N`, `TRANSLAT` | 🟡 Amber (`#fbbf24`) |
-| **3** | **`FEATURE`** | `FEATURE`, `FEAT`, `NEW`, `ADD`, `ADDED`, `IMPLEMENT`, `IMPLEMENTED`, `INTEGRATE`, `INTRODUCE`, `SUPPORT` | 🟢 Grün (`#34d399` + Glow) |
-| **4** | **`DOCS`** | `DOCS`, `DOC`, `README`, `GUIDE`, `DOCUMENTATION`, `MANUAL`, `CHANGELOG`, `AGENTS` | 🔵 Cyan (`#38bdf8`) |
-| **5** | **`PERF`** | `PERF`, `PERFORMANCE`, `REFACTOR`, `CLEANUP`, `OPTIMIZE`, `OPTIMIZED`, `SPEED`, `RAM_SAVING`, `MEM_SAVING` | 🟣 Lila (`#c084fc`) |
-| **6** | **`FIX`** | `FIX`, `FIXED`, `BUG`, `PATCH`, `RESOLVE`, `RESOLVED`, `RESTORE`, `RESTORED`, `CORRECT`, `CORRECTED`, `HOTFIX`, `REPAIR` | 🌸 Rose (`#fb7185`) |
-| **7** | **`FIX` (Default)** | *(kein spezifisches Schlüsselwort)* | ⚪ Schiefergrau (`#cbd5e1`) |
+| Component | Location | Description & Visual Feedback |
+| :--- | :--- | :--- |
+| **Air-Gap Bridge Card** | `/settings#airgap-settings` | Slim, prominent card positioned directly below the Wi-Fi card with inline SVG House (Local) and Globe (Internet) icons. |
+| **Dynamic Bridge Line** | Inside Air-Gap Card | Green glowing continuous pulse line (`.bridge-online`) when Online; red dashed cut line (`.bridge-blocked`) when Air-Gap is active. |
+| **Status Pill** | Center of Bridge Line | `ONLINE` (Green badge) / `AIR-GAP` (Red badge). |
+| **Safety Confirmation Modal** | `/settings` Popup | Warns user before enabling outbound traffic and transparently lists all contacted endpoints. |
+| **Info Tooltip Button `ℹ` (idx 22)** | Air-Gap Card Header | Complete explanation of endpoints (`raw.githubusercontent.com`, `api.github.com`, `pool.ntp.org`, `time.google.com`, `time.nist.gov`). |
+| **Air-Gap Firmware Notice** | `/firmware` | Warning banner with direct jump link `<a href="/settings#airgap-settings">` and suppression of client-side GitHub calls. |
 
 ---
 
-## Verification & Build Results
+## 3. Configuration & LittleFS Persistence
 
-- **Compiler:** PlatformIO / ESP32-S3 (Arduino framework)
-- **Build Milestone:** **v178**
-- **Result:** `[SUCCESS] Exit Code 0` (Took 69.83s)
-- **RAM Usage:** 29.7% (97,244 bytes)
-- **Flash Usage:** 23.0% (1,564,957 bytes)
-- **FIRMWARE Bundle:** Synchronized `FIRMWARE/firmware.bin` and `version.txt` (v178).
+- `struct Config`: Added `int outbound_internet = 1;` (1 = Online, 0 = Air-Gap).
+- Persisted in `/config.json` with CRC32 integrity checksum.
+- Parsed and saved via `POST /settings/save`.
+
+---
+
+## 4. Verification & Build Results
+
+- **Target:** ESP32-S3 DevKitC-1 N8
+- **Milestone:** Build v182
+- **Result:** Automated compilation verification via PlatformIO.

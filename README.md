@@ -311,6 +311,37 @@ Die Displays teilen sich denselben physischen SPI-Kabelbaum (JST-Stecker am YD-E
   - **Dual-Storage Spiegelung (LittleFS + NVS):** Parallele Sicherung in LittleFS und der ESP32 NVS-Flash-Partition. Beim Booten gewinnt automatisch der höhere gültige Wert (Schutz vor Datenverlust nach Firmware-Flashes).
   - **Live-Kalibrierung & Reset in Settings:** Beim Eintippen/Fokussieren des Zählerfeldes pausiert das AJAX-Update und ein `Ändern`-Button erscheint zur manuellen Stand-Wiederherstellung oder zum Reset auf `0`.
 
+### 12. Multi-Language Architektur (Deutsch & English)
+* **High-Density SVG Flaggen-Pille:** Im Header aller Webseiten (`/`, `/settings`, `/firmware`, `/firmware/autoupdate`) integriert mit inline gerenderten Vektorflaggen (Schwarz-Rot-Gold & Stars-and-Stripes).
+* **Client-Side I18N Engine:** Nahtlose Live-Umschaltung aller Titel, Labels, Einheiten, Tooltips, Sprechblasen und des Grow Advisors ohne Seiten-Reload (`data-i18n`).
+* **Konsistente Speicherung im LittleFS Flash:**
+  - Im unauthentifizierten Zustand speichert der Browser die Sprachpräferenz lokal im `localStorage`.
+  - Bei eingeloggtem Benutzer (`admin` / Session) synchronisiert das System die Auswahl im Hintergrund per `POST /api/settings/language` direkt in das LittleFS-Flash (`config.json`), sodass die Sprache über alle Geräte und Sessions hinweg dauerhaft erhalten bleibt.
+
+### 13. GitHub 100-Commit Feed & Heuristik-Changelog
+* **100-Commits Full History Blob:** Lädt bis zu 100 GitHub-Commits in einem einzigen REST-API-Call (`per_page=100`) und schützt das 60 Anfragen/Stunde-Limit über einen 5-Minuten-Session-Cache (`sessionStorage`).
+* **Heuristischer Satz-Token-Matcher:** Erkennt Schlüsselwörter im Commit-Titel & Body und kategorisiert Änderungen in farbcodierte Kapsel-Badges:
+  - `FIX CORE` (Rot / Glowing Border): Kernel, Treiber, Sensoren, ESP-NOW, Fail-Safe, NVS/LittleFS, Servo.
+  - `FIX UI` (Amber): Web-UI, CSS, HTML, Layout, Schriften, Flaggen, Modals, Canvas.
+  - `FEATURE` (Grün): Neue Funktionen, Modi und Erweiterungen.
+  - `DOCS` (Cyan): Dokumentation, README, Handbücher.
+  - `PERF` (Lila): Optimierungen, Refactorings, RAM/Flash-Einsparungen.
+* **Linksbündige Datumsspalte:** Festes ISO-Datumsfeld ganz links für eine ruhige, senkrechte Ausrichtung aller Badges.
+* **Dual CDN Cache-Busting:** Umgeht CDN-Caches (`no-cache`, `no-store`, Timestamp & Salt) für sofortige Update-Erkennung.
+
+### 14. Air-Gap Privacy Mode (Internet Firewall)
+* **Paranoid Gardener Mode:** Bietet maximale Privatsphäre für isolierte Netzwerke ohne ausgehende Verbindungen ins weltweite Internet.
+* **Interaktives Visual-Bridge Panel:**
+  - Platziert unter der WLAN-Karte mit Sprung-Anker `id="airgap-settings"`.
+  - Inline Vektor-Grafiken: Lokales Haus (Links) & Globus (Rechts).
+  - Dynamische Verbindungsleitung: Grün leuchtender Puls bei `ONLINE (ERLAUBT)`, rot unterbrochene Schnittlinie bei `AIR-GAP (GEBLOCKT)`.
+* **Sicherheits-Bestätigungs-Modal:** Beim Umschalten auf `ONLINE` warnt ein Sicherheits-Popup und listet transparent alle kontaktierten externen URLs auf.
+* **Strikte Firmware-Blockade im Air-Gap Modus:**
+  - Blockiert `fetchGithubFirmwareVersion()`, `checkGithubUpdateAsync()` und Online-OTA.
+  - Deaktiviert öffentliche NTP-Zeitsynchronisation (`pool.ntp.org`).
+  - `/firmware` blendet einen Air-Gap Warnhinweis mit direktem Link zu den Einstellungen ein und unterdrückt clientseitige GitHub-Abfragen.
+  - Lokaler Netzwerkverkehr (MQTT Broker, Web UI, ESP-NOW Funk) bleibt zu 100% aktiv.
+
 ---
 
 ## 💻 Bauen & Flashen via PlatformIO

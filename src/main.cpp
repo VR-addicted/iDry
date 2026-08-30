@@ -166,6 +166,7 @@ struct Config {
   int purge_duration_sec = 30;   // Purge opening duration in seconds (10 to 600 sec)
   float servo_total_meters = 0.0f; // Total Servo travel distance in meters (r=27mm)
   char web_language[8] = "de";  // UI language preference ("de" or "en")
+  int outbound_internet = 0;    // 0 = Blocked / Air-Gap Mode (Default Offline), 1 = Outbound Internet Traffic Allowed
 };
 
 // --- T-PIPE LIVE SYSTEM LOGGING ARCHITECTURE ---
@@ -1015,6 +1016,7 @@ bool loadConfiguration() {
   sysConfig.purge_duration_sec = doc["purge_duration_sec"] | 30;
   sysConfig.servo_total_meters = doc["servo_total_meters"] | 0.0f;
   strlcpy(sysConfig.web_language, doc["web_language"] | "de", sizeof(sysConfig.web_language));
+  sysConfig.outbound_internet = doc["outbound_internet"] | 0;
 
   loadOdometer();
 
@@ -1056,6 +1058,7 @@ bool saveConfiguration() {
   doc["purge_duration_sec"] = sysConfig.purge_duration_sec;
   doc["servo_total_meters"] = sysConfig.servo_total_meters;
   doc["web_language"] = sysConfig.web_language;
+  doc["outbound_internet"] = sysConfig.outbound_internet;
 
   // Compute and embed CRC32 checksum
   uint32_t crcVal = calculateConfigCRC(doc);
@@ -3652,6 +3655,7 @@ void handlePortalRoot() {
 
         let activeBubble = null;
         let activeBubbleBtn = null;
+        let activeCard = null;
 
         function showInfo(btn, idx) {
             hideInfo();
@@ -3662,6 +3666,14 @@ void handlePortalRoot() {
             bubble.innerHTML = infos[idx];
             btn.parentElement.appendChild(bubble);
             btn.classList.add('active');
+
+            const card = btn.closest('.card') || btn.closest('.section-card');
+            if (card) {
+                card.style.zIndex = '9999';
+                card.style.position = 'relative';
+                activeCard = card;
+            }
+
             activeBubble = bubble;
             activeBubbleBtn = btn;
         }
@@ -3674,6 +3686,10 @@ void handlePortalRoot() {
             if (activeBubbleBtn) {
                 activeBubbleBtn.classList.remove('active');
                 activeBubbleBtn = null;
+            }
+            if (activeCard) {
+                activeCard.style.zIndex = '';
+                activeCard = null;
             }
         }
 
@@ -6414,6 +6430,71 @@ void handleSettingsPage() {
         .pulse-update {
             animation: pulse-update-border 1s infinite ease-in-out !important;
         }
+        .airgap-bridge-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 12px 18px;
+            margin-top: 5px;
+        }
+        .airgap-node {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .airgap-bridge-track {
+            flex: 1;
+            margin: 0 16px;
+            height: 28px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .airgap-bridge-track::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            height: 3px;
+            border-radius: 2px;
+            transition: all 0.3s ease;
+        }
+        .bridge-online::before {
+            background: linear-gradient(90deg, #38bdf8, #22c55e, #818cf8);
+            box-shadow: 0 0 10px rgba(34, 197, 94, 0.7);
+        }
+        .bridge-blocked::before {
+            background: repeating-linear-gradient(90deg, #ef4444, #ef4444 6px, transparent 6px, transparent 12px);
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+        }
+        .airgap-status-pill {
+            position: relative;
+            z-index: 2;
+            padding: 2px 10px;
+            border-radius: 9999px;
+            font-size: 10px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            transition: all 0.3s ease;
+        }
+        .pill-online {
+            background: rgba(34, 197, 94, 0.25);
+            border: 1px solid #22c55e;
+            color: #4ade80;
+            box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+        }
+        .pill-blocked {
+            background: rgba(239, 68, 68, 0.25);
+            border: 1px solid #ef4444;
+            color: #fca5a5;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+        }
     </style>
 </head>
 <body>
@@ -6491,6 +6572,59 @@ void handleSettingsPage() {
   }
   html += R"rawhtml(" placeholder="passwort eintragen">
                     <span class="hint-text" data-i18n="hint_web_pass">Freilassen für freien Lesezugriff. Sobald ein Passwort eingetragen ist, schützt es Konsolen &amp; Einstellungen.</span>
+                </div>
+            </div>
+
+            <!-- Air-Gap Privacy & Internet Firewall Panel -->
+            <div class="settings-card" id="airgap-settings" style="border-color: rgba(56, 189, 248, 0.25);">
+                <div class="section-title">
+                    <span style="display: flex; align-items: center; gap: 8px;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                        <span data-i18n="sec_airgap">Internet Firewall (Air-Gap Privacy)</span>
+                    </span>
+                    <span class="info-btn" onclick="toggleInfo(event, 22)" onmouseenter="showInfo(this, 22)" onmouseleave="hideInfo(this)">i</span>
+                </div>
+                
+                <!-- Visual Connection Bridge Graphic -->
+                <div class="airgap-bridge-container">
+                    <div class="airgap-node" title="Lokales Gerät / Local ESP32">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.5));">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                        </svg>
+                        <span style="font-size: 10px; color: #94a3b8; font-weight: bold; margin-top: 4px;">LOCAL</span>
+                    </div>
+
+                    <div class="airgap-bridge-track )rawhtml";
+  html += (sysConfig.outbound_internet == 1) ? "bridge-online" : "bridge-blocked";
+  html += R"rawhtml(" id="airgap-bridge-line">
+                        <div class="airgap-status-pill )rawhtml";
+  html += (sysConfig.outbound_internet == 1) ? "pill-online" : "pill-blocked";
+  html += R"rawhtml(" id="airgap-status-pill">)rawhtml";
+  html += (sysConfig.outbound_internet == 1) ? "ONLINE" : "AIR-GAP";
+  html += R"rawhtml(</div>
+                    </div>
+
+                    <div class="airgap-node" title="Öffentliches Internet / Public Internet">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 6px rgba(129, 140, 248, 0.5));">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        </svg>
+                        <span style="font-size: 10px; color: #94a3b8; font-weight: bold; margin-top: 4px;">INTERNET</span>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 15px; display: flex; align-items: center; justify-content: space-between;">
+                    <label for="outbound_select" style="margin: 0; font-size: 13px; font-weight: 500;" data-i18n="lbl_airgap_status">Internet Firewall Status:</label>
+                    <select name="outbound_internet" id="outbound_select" onchange="onAirgapChange(this)" style="width: auto; min-width: 170px; font-weight: bold;">
+                        <option value="1" style="color: #4ade80;" data-i18n="opt_airgap_allowed")rawhtml";
+  if (sysConfig.outbound_internet == 1) html += " selected";
+  html += R"rawhtml(>🟢 Erlaubt (Online)</option>
+                        <option value="0" style="color: #f87171;" data-i18n="opt_airgap_blocked")rawhtml";
+  if (sysConfig.outbound_internet == 0) html += " selected";
+  html += R"rawhtml(>🔴 Geblockt (Air-Gap)</option>
+                    </select>
                 </div>
             </div>
 
@@ -6801,6 +6935,25 @@ void handleSettingsPage() {
             </form>
         </div>
 
+        <!-- Confirmation Modal for Firewall Option Toggle with 2-Second Hold Button -->
+        <div id="airgap-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.8); backdrop-filter:blur(8px); z-index:999999; align-items:center; justify-content:center; padding:20px;">
+            <div style="background:#0f172a; border:1px solid rgba(56, 189, 248, 0.5); border-radius:18px; max-width:520px; width:100%; padding:24px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.9), 0 0 25px rgba(56, 189, 248, 0.25); animation:info-fade-in 0.25s ease-out;">
+                <div id="airgap-modal-title" style="font-size:16px; font-weight:bold; color:#f87171; margin-bottom:14px; display:flex; align-items:center; gap:8px;">
+                    ⚠️ Internet Firewall ändern?
+                </div>
+                <div id="airgap-modal-body" style="font-size:12px; line-height:1.55; color:#cbd5e1; margin-bottom:20px; background:rgba(15, 23, 42, 0.6); padding:14px 16px; border-radius:12px; border:1px solid rgba(255,255,255,0.08); max-height:60vh; overflow-y:auto;">
+                    <!-- Populated dynamically from PANEL_INFOS_I18N[currentLang][22] -->
+                </div>
+                <div style="display:flex; gap:12px; justify-content:flex-end; align-items:center;">
+                    <button type="button" onclick="cancelAirgapModal()" class="btn btn-secondary" style="padding:10px 18px; font-size:13px; margin:0;" data-i18n="modal_airgap_cancel">Abbrechen</button>
+                    <div id="airgap-hold-btn" class="btn" style="position:relative; overflow:hidden; background:#1e293b; border:1px solid #22c55e; color:white; padding:10px 18px; font-size:13px; margin:0; cursor:pointer; user-select:none; min-width:210px; text-align:center; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 0 12px rgba(34,197,94,0.3);">
+                        <div id="airgap-hold-progress" style="position:absolute; left:0; top:0; bottom:0; width:0%; background:#22c55e; transition:width 0.03s linear; z-index:1;"></div>
+                        <span id="airgap-hold-text" style="position:relative; z-index:2; font-weight:bold;">Gedrückt halten (2s)...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="footer" id="footer-text">iDRY26 v)rawhtml" +
       String("1.") + String(localFirmwareVersion) +
       R"rawhtml( - (bench: <span id="footer-bench-settings" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> loops/s | heap: <span id="footer-heap-settings" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> KB | alloc: <span id="footer-alloc-settings" style="font-family: monospace; color: #38bdf8; font-weight: bold;">--</span> KB)</div>
@@ -6822,6 +6975,18 @@ void handleSettingsPage() {
                 opt_tx_34: "8.5 dBm (Minimum)",
                 lbl_web_pass: "Webinterface Passwort (Optional)",
                 hint_web_pass: "Freilassen für freien Lesezugriff. Sobald ein Passwort eingetragen ist, schützt es Konsolen &amp; Einstellungen.",
+                sec_airgap: "Internet Firewall (Air-Gap Privacy)",
+                lbl_airgap_status: "Internet Firewall Status:",
+                opt_airgap_allowed: "🟢 Erlaubt (Online)",
+                opt_airgap_blocked: "🔴 Geblockt (Air-Gap)",
+                airgap_online: "ONLINE",
+                airgap_blocked: "AIR-GAP",
+                modal_airgap_enable_title: "⚠️ Internet-Kommunikation aktivieren?",
+                modal_airgap_block_title: "🛡️ Internet Firewall aktivieren (Air-Gap)?",
+                modal_airgap_cancel: "Abbrechen",
+                hold_to_save: "Gedrückt halten (2s)...",
+                holding: "Halten... ",
+                confirmed: "Gespeichert! ✔",
                 sec_mqtt: "MQTT Konfiguration",
                 lbl_mqtt_server: "MQTT Broker Adresse",
                 lbl_mqtt_port: "MQTT Port",
@@ -6891,6 +7056,18 @@ void handleSettingsPage() {
                 opt_tx_34: "8.5 dBm (Minimum)",
                 lbl_web_pass: "Web Interface Password (Optional)",
                 hint_web_pass: "Leave empty for public read access. Setting a password protects consoles &amp; settings.",
+                sec_airgap: "Internet Firewall (Air-Gap Privacy)",
+                lbl_airgap_status: "Internet Firewall Status:",
+                opt_airgap_allowed: "🟢 Allowed (Online)",
+                opt_airgap_blocked: "🔴 Blocked (Air-Gap)",
+                airgap_online: "ONLINE",
+                airgap_blocked: "AIR-GAP",
+                modal_airgap_enable_title: "⚠️ Enable Internet Communication?",
+                modal_airgap_block_title: "🛡️ Enable Internet Firewall (Air-Gap)?",
+                modal_airgap_cancel: "Cancel",
+                hold_to_save: "Hold to save (2s)...",
+                holding: "Holding... ",
+                confirmed: "Saved! ✔",
                 sec_mqtt: "MQTT Configuration",
                 lbl_mqtt_server: "MQTT Broker Address",
                 lbl_mqtt_port: "MQTT Port",
@@ -6957,7 +7134,8 @@ void handleSettingsPage() {
                 17: "<b>System & Anzeige</b><br>Display-Helligkeit mit Gamma-2.2-Dimmung, Servo-Update-Intervall und WLAN-Verbindungswatchdog.",
                 18: "<b>System Status</b><br>Diagnoseübersicht mit aktueller IP-Adresse, Display-Modus, RSSI-Signalstärke und automatischem Wochen-Reboot.",
                 19: "<b>Geräte-Management</b><br>Firmware & OTA-Update, Geräte-Neustart, Werkseinstellungen und vollständiger System-Reset.",
-                21: "<b>Servo Laufleistung &amp; Odometer</b><br>Präziser Wegstreckenzähler für den Lüftungsrotor (Hebelarm r=27mm). Berechnet kumulierte Fahrstrecke und Lebensdauer (100% = 50 km). Gesichert über Dual-Storage (LittleFS + NVS)."
+                21: "<b>Servo Laufleistung &amp; Odometer</b><br>Präziser Wegstreckenzähler für den Lüftungsrotor (Hebelarm r=27mm). Berechnet kumulierte Fahrstrecke und Lebensdauer (100% = 50 km). Gesichert über Dual-Storage (LittleFS + NVS).",
+                22: "<b>Air-Gap Privatsphäre &amp; Internet Firewall</b><br>Im aktiven Zustand (Geblockt) werden externe Internetverbindungen streng unterdrückt. Es findet ausschließlich lokaler Netzwerk-Datenverkehr statt (MQTT Broker, Web-UI, ESP-NOW Funk).<br><br><b>Wird die Internet-Kommunikation erlaubt, kontaktiert das System folgende externe Gegenstellen:</b><br>&bull; <code>https://raw.githubusercontent.com/VR-addicted/grow-zone-iDry/...</code> (OTA-Firmware &amp; Versionsabgleich)<br>&bull; <code>https://api.github.com/repos/VR-addicted/grow-zone-iDry/commits</code> (Changelog Commit-Historie)<br>&bull; <code>pool.ntp.org</code>, <code>time.google.com</code>, <code>time.nist.gov</code> (NTP Zeit-Synchronisation via UDP Port 123)"
             },
             en: {
                 13: "<b>Wi-Fi Connection</b><br>Configuration of local Wi-Fi network (SSID, password), web password protection, and RF transmit power.",
@@ -6967,11 +7145,145 @@ void handleSettingsPage() {
                 17: "<b>System & Display</b><br>Display brightness with Gamma 2.2 dimming curve, servo update interval, and Wi-Fi connection watchdog.",
                 18: "<b>System Status</b><br>Diagnostic overview with current IP address, display mode, RSSI signal strength, and automated weekly watchdog reboot.",
                 19: "<b>Device Management</b><br>Firmware & OTA update, device reboot, default values restoration, and full system factory reset.",
-                21: "<b>Servo Mileage &amp; Odometer</b><br>Precision travel odometer for ventilation rotor (lever arm r=27mm). Tracks cumulative distance and mechanical lifespan (100% = 50 km). Protected via Dual-Storage (LittleFS + NVS)."
+                21: "<b>Servo Mileage &amp; Odometer</b><br>Precision travel odometer for ventilation rotor (lever arm r=27mm). Tracks cumulative distance and mechanical lifespan (100% = 50 km). Protected via Dual-Storage (LittleFS + NVS).",
+                22: "<b>Air-Gap Privacy &amp; Internet Firewall</b><br>When active (Blocked), all outbound internet communication is strictly suppressed. Only local network traffic is permitted (MQTT broker, Web UI, ESP-NOW wireless).<br><br><b>When internet communication is enabled, the system contacts the following external endpoints:</b><br>&bull; <code>https://raw.githubusercontent.com/VR-addicted/grow-zone-iDry/...</code> (OTA firmware &amp; version checks)<br>&bull; <code>https://api.github.com/repos/VR-addicted/grow-zone-iDry/commits</code> (Changelog commit history)<br>&bull; <code>pool.ntp.org</code>, <code>time.google.com</code>, <code>time.nist.gov</code> (NTP clock synchronization via UDP port 123)"
             }
         };
 
         let currentLang = localStorage.getItem('idry_lang') || 'de';
+        let prevAirgapVal = )rawhtml";
+  html += String(sysConfig.outbound_internet);
+  html += R"rawhtml(;
+
+        function updateAirgapBridgeUI(val) {
+            const track = document.getElementById('airgap-bridge-line');
+            const pill = document.getElementById('airgap-status-pill');
+            const dict = i18n[currentLang] || i18n.de;
+            if (val === "1" || val === 1) {
+                if (track) track.className = 'airgap-bridge-track bridge-online';
+                if (pill) {
+                    pill.className = 'airgap-status-pill pill-online';
+                    pill.innerText = dict.airgap_online || "ONLINE";
+                }
+            } else {
+                if (track) track.className = 'airgap-bridge-track bridge-blocked';
+                if (pill) {
+                    pill.className = 'airgap-status-pill pill-blocked';
+                    pill.innerText = dict.airgap_blocked || "AIR-GAP";
+                }
+            }
+        }
+
+        let pendingAirgapVal = null;
+        let airgapHoldTimer = null;
+        let airgapHoldStartTime = 0;
+        let airgapHoldInterval = null;
+
+        function resetAirgapHoldButton() {
+            if (airgapHoldTimer) clearTimeout(airgapHoldTimer);
+            if (airgapHoldInterval) clearInterval(airgapHoldInterval);
+            airgapHoldTimer = null;
+            airgapHoldInterval = null;
+            const progressEl = document.getElementById('airgap-hold-progress');
+            const textEl = document.getElementById('airgap-hold-text');
+            const dict = i18n[currentLang] || i18n.de;
+            if (progressEl) progressEl.style.width = '0%';
+            if (textEl) textEl.innerText = dict.hold_to_save || "Gedrückt halten (2s)...";
+        }
+
+        function initAirgapHoldButton() {
+            const btn = document.getElementById('airgap-hold-btn');
+            if (!btn) return;
+
+            function startHold(e) {
+                if (e.cancelable) e.preventDefault();
+                resetAirgapHoldButton();
+                airgapHoldStartTime = Date.now();
+                const progressEl = document.getElementById('airgap-hold-progress');
+                const textEl = document.getElementById('airgap-hold-text');
+                const dict = i18n[currentLang] || i18n.de;
+                
+                airgapHoldInterval = setInterval(function() {
+                    let elapsed = Date.now() - airgapHoldStartTime;
+                    let pct = Math.min(100, Math.round((elapsed / 2000) * 100));
+                    if (progressEl) progressEl.style.width = pct + "%";
+                    if (pct < 100) {
+                        if (textEl) textEl.innerText = (dict.holding || "Halten... ") + ((2000 - elapsed)/1000).toFixed(1) + "s";
+                    }
+                }, 30);
+
+                airgapHoldTimer = setTimeout(function() {
+                    resetAirgapHoldButton();
+                    if (textEl) textEl.innerText = (dict.confirmed || "Gespeichert! ✔");
+                    confirmAirgapModal();
+                }, 2000);
+            }
+
+            function endHold(e) {
+                if (airgapHoldTimer) {
+                    resetAirgapHoldButton();
+                }
+            }
+
+            btn.addEventListener('mousedown', startHold);
+            btn.addEventListener('mouseup', endHold);
+            btn.addEventListener('mouseleave', endHold);
+            btn.addEventListener('touchstart', startHold, {passive: false});
+            btn.addEventListener('touchend', endHold);
+            btn.addEventListener('touchcancel', endHold);
+        }
+
+        function onAirgapChange(selectEl) {
+            pendingAirgapVal = selectEl.value;
+            const modal = document.getElementById('airgap-modal');
+            const modalTitle = document.getElementById('airgap-modal-title');
+            const modalBody = document.getElementById('airgap-modal-body');
+            const dict = i18n[currentLang] || i18n.de;
+            const infos = PANEL_INFOS_I18N[currentLang] || PANEL_INFOS_I18N.de;
+
+            if (modalTitle) {
+                modalTitle.innerHTML = (pendingAirgapVal === "1") ? dict.modal_airgap_enable_title : dict.modal_airgap_block_title;
+            }
+            if (modalBody) {
+                modalBody.innerHTML = infos[22];
+            }
+            resetAirgapHoldButton();
+            if (modal) modal.style.display = 'flex';
+        }
+
+        function confirmAirgapModal() {
+            const modal = document.getElementById('airgap-modal');
+            const selectEl = document.getElementById('outbound_select');
+            const targetVal = (pendingAirgapVal !== null) ? pendingAirgapVal : (selectEl ? selectEl.value : "0");
+            
+            fetch('/api/settings/firewall?val=' + encodeURIComponent(targetVal), { method: 'POST' })
+                .then(r => r.json())
+                .then(res => {
+                    if (res.status === 'ok') {
+                        if (modal) modal.style.display = 'none';
+                        prevAirgapVal = targetVal;
+                        if (selectEl) selectEl.value = String(targetVal);
+                        updateAirgapBridgeUI(targetVal);
+                        pendingAirgapVal = null;
+                    } else {
+                        alert("Fehler beim Speichern: " + (res.message || "Nicht autorisiert"));
+                        cancelAirgapModal();
+                    }
+                })
+                .catch(err => {
+                    alert("Netzwerkfehler beim Speichern der Firewall-Einstellung: " + err);
+                    cancelAirgapModal();
+                });
+        }
+
+        function cancelAirgapModal() {
+            resetAirgapHoldButton();
+            const modal = document.getElementById('airgap-modal');
+            const selectEl = document.getElementById('outbound_select');
+            if (modal) modal.style.display = 'none';
+            if (selectEl) selectEl.value = String(prevAirgapVal);
+            pendingAirgapVal = null;
+        }
 
         function setLanguage(lang) {
             currentLang = lang;
@@ -7003,12 +7315,16 @@ void handleSettingsPage() {
                 document.getElementById('wlan-time-trap-label').innerHTML = trapVal + dict.seconds_suffix;
             }
 
+            const holdBtnText = document.getElementById('airgap-hold-text');
+            if (holdBtnText) holdBtnText.innerText = dict.hold_to_save || "Gedrückt halten (2s)...";
+
             // Sync language preference with ESP32 Flash (persisted if authenticated)
             fetch('/api/set_language?lang=' + encodeURIComponent(lang), { method: 'POST' }).catch(() => {});
         }
 
         let activeBubble = null;
         let activeBubbleBtn = null;
+        let activeCard = null;
 
         function showInfo(btn, idx) {
             hideInfo();
@@ -7019,6 +7335,14 @@ void handleSettingsPage() {
             bubble.innerHTML = infos[idx];
             btn.parentElement.appendChild(bubble);
             btn.classList.add('active');
+
+            const card = btn.closest('.settings-card') || btn.closest('.card');
+            if (card) {
+                card.style.zIndex = '9999';
+                card.style.position = 'relative';
+                activeCard = card;
+            }
+
             activeBubble = bubble;
             activeBubbleBtn = btn;
         }
@@ -7031,6 +7355,10 @@ void handleSettingsPage() {
             if (activeBubbleBtn) {
                 activeBubbleBtn.classList.remove('active');
                 activeBubbleBtn = null;
+            }
+            if (activeCard) {
+                activeCard.style.zIndex = '';
+                activeCard = null;
             }
         }
 
@@ -7407,6 +7735,7 @@ void handleSettingsPage() {
 
         // Initialize and poll
         toggleEspNowFields();
+        initAirgapHoldButton();
         setLanguage(currentLang);
         pollEspNowStatus();
         setInterval(pollEspNowStatus, 250);
@@ -7460,6 +7789,8 @@ void handleSettingsSave() {
   int tx_power = server.arg("wifi_tx_power").toInt();
   int servo_up_int = server.arg("servo_update_interval").toInt();
   int trap_val = server.arg("wlan_time_trap").toInt();
+  int outbound_val = server.hasArg("outbound_internet") ? server.arg("outbound_internet").toInt() : sysConfig.outbound_internet;
+  if (outbound_val < 0 || outbound_val > 1) outbound_val = 0;
 
   int esp_role = server.arg("espnow_role").toInt();
   int esp_channel = server.arg("espnow_channel").toInt();
@@ -7516,6 +7847,7 @@ void handleSettingsSave() {
        sysConfig.mqtt_report_interval != interval ||
        sysConfig.display_brightness != brightness ||
        sysConfig.wifi_tx_power != tx_power ||
+       sysConfig.outbound_internet != outbound_val ||
        sysConfig.espnow_role != esp_role ||
        sysConfig.espnow_channel != esp_channel ||
        strcmp(sysConfig.espnow_peer_mac, esp_peer_mac.c_str()) != 0 ||
@@ -7548,6 +7880,7 @@ void handleSettingsSave() {
     sysConfig.mqtt_report_interval = interval;
     sysConfig.display_brightness = brightness;
     sysConfig.wifi_tx_power = tx_power;
+    sysConfig.outbound_internet = outbound_val;
     sysConfig.espnow_role = esp_role;
     sysConfig.espnow_channel = esp_channel;
     strlcpy(sysConfig.espnow_peer_mac, esp_peer_mac.c_str(),
@@ -7562,9 +7895,9 @@ void handleSettingsSave() {
     }
 
     saveConfiguration(); // Saves to LittleFS JSON
-    addAppLogEx(1, "[Config] Settings Saved: SSID='%s', Pass='%s', MQTT='%s:%d' (DevName: '%s', RptInt: %dmin), Brightness: %d%%, TXPower: %d, ServoUpdInt: %ds, WLANTimeTrap: %ds, ESP-NOW Role: %d, Channel: %d, PeerMAC: '%s', Failsafe: %d",
+    addAppLogEx(1, "[Config] Settings Saved: SSID='%s', Pass='%s', MQTT='%s:%d' (DevName: '%s', RptInt: %dmin), OutboundInternet: %d, Brightness: %d%%, TXPower: %d, ServoUpdInt: %ds, WLANTimeTrap: %ds, ESP-NOW Role: %d, Channel: %d, PeerMAC: '%s', Failsafe: %d",
                 sysConfig.wifi_ssid, sysConfig.wifi_pass, sysConfig.mqtt_server, sysConfig.mqtt_port,
-                sysConfig.mqtt_device_name, sysConfig.mqtt_report_interval, sysConfig.display_brightness,
+                sysConfig.mqtt_device_name, sysConfig.mqtt_report_interval, sysConfig.outbound_internet, sysConfig.display_brightness,
                 sysConfig.wifi_tx_power, sysConfig.servo_update_interval, sysConfig.wlan_time_trap,
                 sysConfig.espnow_role, sysConfig.espnow_channel, sysConfig.espnow_peer_mac, sysConfig.espnow_failsafe_mode);
   } else {
@@ -7730,7 +8063,8 @@ void handleSettingsReset() {
         (sysConfig.mqtt_report_interval != 5 ||
          sysConfig.display_brightness != 80 || sysConfig.wifi_tx_power != 52 ||
          sysConfig.servo_update_interval != 5 ||
-         sysConfig.wlan_time_trap != 120);
+         sysConfig.wlan_time_trap != 120 ||
+         sysConfig.outbound_internet != 0);
 
     if (hasChanges) {
       sysConfig.mqtt_report_interval = 5;
@@ -7738,6 +8072,7 @@ void handleSettingsReset() {
       sysConfig.wifi_tx_power = 52;
       sysConfig.servo_update_interval = 5;
       sysConfig.wlan_time_trap = 120;
+      sysConfig.outbound_internet = 0;
       saveConfiguration();
     } else {
       Serial.println("[LittleFS] Configuration already at default values. "
@@ -7942,6 +8277,24 @@ void handleDryStrategyApi() {
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
+void handleFirewallApi() {
+  if (!isWebAuthenticated()) {
+    server.send(401, "application/json", "{\"status\":\"error\",\"message\":\"Authentifizierung erforderlich\"}");
+    return;
+  }
+  if (!server.hasArg("val")) {
+    server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Fehlender Parameter 'val'\"}");
+    return;
+  }
+  int val = server.arg("val").toInt();
+  if (val < 0 || val > 1) val = 0;
+  
+  sysConfig.outbound_internet = val;
+  saveConfiguration();
+  addAppLogEx(1, "[Firewall] Internet Firewall changed via Modal to: %s", val == 1 ? "ONLINE (Allowed)" : "AIR-GAP (Blocked)");
+  server.send(200, "application/json", "{\"status\":\"ok\",\"outbound_internet\":" + String(val) + "}");
+}
+
 void handleFavicon() { server.send(204, "image/x-icon", ""); }
 
 // =====================================================================
@@ -7952,6 +8305,8 @@ int cachedOnlineVersion = -1;
 unsigned long lastGithubCheckTime = 0;
 
 int fetchGithubFirmwareVersion() {
+  if (sysConfig.outbound_internet == 0)
+    return -1; // Outbound Internet blocked by Air-Gap Privacy Mode
   if (WiFi.status() != WL_CONNECTED)
     return -1;
   WiFiClientSecure client;
@@ -7978,6 +8333,8 @@ int fetchGithubFirmwareVersion() {
 }
 
 void checkGithubUpdateAsync(bool force) {
+  if (sysConfig.outbound_internet == 0)
+    return; // Outbound Internet blocked by Air-Gap Privacy Mode
   if (WiFi.status() != WL_CONNECTED)
     return;
   // Allow 10 seconds post-connection buffer for initial automatic check after boot
@@ -8239,6 +8596,17 @@ void handleFirmwarePage() {
             </div>
         </div>
         <div class="card">
+            <!-- Airgap Privacy Banner when blocked -->
+            <div class="airgap-banner" id="airgap-fw-banner" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 12.5px; color: #fca5a5; line-height: 1.45; display: )rawhtml";
+  html += (sysConfig.outbound_internet == 0) ? "block" : "none";
+  html += R"rawhtml(;">
+                🛡️ <strong data-i18n="fw_airgap_title">Air-Gap Privacy Modus aktiv</strong><br>
+                <span data-i18n="fw_airgap_notice">Ausgehender Internet-Traffic ist in den Einstellungen blockiert. Automatische Versionsprüfungen und GitHub OTA sind deaktiviert.</span>
+                <div style="margin-top: 6px;">
+                    <a href="/settings#airgap-settings" style="color: #38bdf8; text-decoration: underline; font-weight: bold;" data-i18n="fw_airgap_link">Zu den Einstellungen springen &rarr;</a>
+                </div>
+            </div>
+
             <div class="card-title" data-i18n="fw_card_status">Versions-Status</div>
             <div class="info-text">
                 <span data-i18n="fw_lbl_installed">Installierte Version:</span> <strong>)rawhtml";
@@ -8305,6 +8673,9 @@ void handleFirmwarePage() {
         </div>
     </div>
     <script>
+        const isAirgap = )rawhtml";
+  html += (sysConfig.outbound_internet == 0) ? "true" : "false";
+  html += R"rawhtml(;
         const i18n = {
             de: {
                 fw_title: "Firmware &amp; OTA Update",
@@ -8325,7 +8696,11 @@ void handleFirmwarePage() {
                 fw_loading_commits: "Lade Commit-Historie von GitHub...",
                 fw_commits_err: "Changelog nicht erreichbar (Offline / Rate-Limit)",
                 fw_rate_penalty: "⛔ <b>GitHub API Rate-Limit erreicht (60/h Penalty):</b> Entsperrung um {reset} Uhr.<br>Firmware (.bin) bitte direkt auf GitHub downloaden und unten über 'Manuelles Firmware File Flash' flashen.",
-                fw_rate_low: "⚠️ <b>GitHub API Limit:</b> Noch {rem} von 60 Anfragen frei (Reset: {reset} Uhr)."
+                fw_rate_low: "⚠️ <b>GitHub API Limit:</b> Noch {rem} von 60 Anfragen frei (Reset: {reset} Uhr).",
+                fw_airgap_title: "Air-Gap Privacy Modus aktiv",
+                fw_airgap_notice: "Ausgehender Internet-Traffic ist in den Einstellungen blockiert. Automatische Versionsprüfungen und GitHub OTA sind deaktiviert.",
+                fw_airgap_link: "Zu den Einstellungen springen &rarr;",
+                fw_airgap_changelog: "Air-Gap Privatsphäre aktiv (Keine GitHub-Verbindung)"
             },
             en: {
                 fw_title: "Firmware &amp; OTA Update",
@@ -8346,7 +8721,11 @@ void handleFirmwarePage() {
                 fw_loading_commits: "Loading commit history from GitHub...",
                 fw_commits_err: "Changelog unavailable (Offline / Rate limit)",
                 fw_rate_penalty: "⛔ <b>GitHub API rate limit reached (60/h penalty):</b> Unlocks at {reset}.<br>Please download firmware (.bin) from GitHub and flash manually below.",
-                fw_rate_low: "⚠️ <b>GitHub API quota:</b> {rem} of 60 requests remaining (Reset: {reset})."
+                fw_rate_low: "⚠️ <b>GitHub API quota:</b> {rem} of 60 requests remaining (Reset: {reset}).",
+                fw_airgap_title: "Air-Gap Privacy Mode active",
+                fw_airgap_notice: "Outbound internet traffic is blocked in settings. Automatic version checks and GitHub OTA are disabled.",
+                fw_airgap_link: "Go to Settings &rarr;",
+                fw_airgap_changelog: "Air-Gap Privacy active (No GitHub connection)"
             }
         };
 
@@ -8606,8 +8985,16 @@ void handleFirmwarePage() {
         }
 
         setLanguage(currentLang);
-        fetchGitHubCommits();
-        checkLiveOnlineVersion();
+        if (isAirgap) {
+            const container = document.getElementById('changelog-box');
+            const dict = i18n[currentLang] || i18n.de;
+            if (container) {
+                container.innerHTML = `<div style="color:#fca5a5; font-size:11.5px; font-style:italic;">🛡️ ${dict.fw_airgap_changelog}</div>`;
+            }
+        } else {
+            fetchGitHubCommits();
+            checkLiveOnlineVersion();
+        }
     </script>
 </body>
 </html>
@@ -8616,6 +9003,16 @@ void handleFirmwarePage() {
 }
 
 void handleAutoUpdate() {
+  if (sysConfig.outbound_internet == 0) {
+    server.send(403, "text/html",
+                "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Air-Gap Modus Aktiv</title>"
+                "<style>body{background:#0f172a;color:white;text-align:center;padding-top:100px;font-family:sans-serif;}</style></head>"
+                "<body><div style='background:#1e293b;padding:30px;border-radius:15px;display:inline-block;border:1px solid rgba(239,68,68,0.4);'>"
+                "<h1 style='color:#f87171;margin-bottom:15px;'>🛡️ Air-Gap Privacy-Modus aktiv</h1>"
+                "<p style='color:#cbd5e1;margin-bottom:20px;'>Ausgehende Internet-Verbindungen sind in den Einstellungen deaktiviert.<br>GitHub OTA Online-Updates sind blockiert.<br><small style='color:#94a3b8;'>Outbound internet connections are disabled in settings.</small></p>"
+                "<a href='/settings#airgap-settings' style='color:#38bdf8;text-decoration:underline;'>Zu den Einstellungen / Go to Settings</a></div></body></html>");
+    return;
+  }
   if (WiFi.status() != WL_CONNECTED) {
     server.send(500, "text/html",
                 "<html><body><h1>Keine WLAN-Verbindung zum Internet!</h1><p><a "
@@ -8873,6 +9270,11 @@ void handleAutoUpdate() {
 }
 
 void handleAutoUpdateApi() {
+  if (sysConfig.outbound_internet == 0) {
+    server.send(403, "application/json",
+                "{\"status\":\"error\",\"message\":\"Air-Gap Privacy Mode active. Outbound internet traffic blocked.\"}");
+    return;
+  }
   if (WiFi.status() != WL_CONNECTED) {
     server.send(400, "application/json",
                 "{\"status\":\"error\",\"message\":\"Keine aktive "
@@ -9643,6 +10045,8 @@ void setup() {
     server.on("/api/settings/dry_strategy", handleDryStrategyApi);
     server.on("/api/settings/purge", handlePurgeApi);
     server.on("/api/settings/odometer", handleOdometerApi);
+    server.on("/api/settings/firewall", handleFirewallApi);
+    server.on("/api/settings/airgap", handleFirewallApi);
     server.on("/api/loglevel", HTTP_POST, handleSetLogLevel);
     server.on("/api/loglevel", HTTP_GET, handleSetLogLevel);
     server.on("/api/set_language", HTTP_POST, handleSetLanguageApi);
@@ -9979,7 +10383,7 @@ void loop() {
     disconnectStartTime = 0;
     timeTrapAlarmTriggered = false;
 
-    if (!ntpInitialized) {
+    if (!ntpInitialized && sysConfig.outbound_internet == 1) {
       ntpInitialized = true;
       configTzTime("CET-1CEST,M3.5.0,M10.5.0/3", "pool.ntp.org",
                    "time.nist.gov", "time.google.com");

@@ -220,6 +220,24 @@ Do not change SPI, I2C, ADC, or actuator pin assignments:
   - Formats commit date based on active `currentLang`: `DD.MM.YYYY` for `de`, `MM/DD/YYYY` for `en`.
   - Links `#<short_sha>` to `https://github.com/VR-addicted/grow-zone-iDry/commit/<sha>`.
 
+---
+
+## Air-Gap Privacy Mode ("Paranoid Gardener Mode" Rules)
+* **Configuration Field & Persistence:**
+  - `struct Config`: `int outbound_internet = 1;` (1 = Allowed / Online, 0 = Blocked / Air-Gap).
+  - Persisted in LittleFS `/config.json` and loaded on boot.
+* **Air-Gap Settings Card (`/settings#airgap-settings`):**
+  - Slim card below Wi-Fi card with interactive House, Bridge, and Globe SVG graphics.
+  - Bridge line dynamically glows green (`.bridge-online`, `.pill-online`) when Online or displays red broken line (`.bridge-blocked`, `.pill-blocked`) when Air-Gap is active.
+  - Toggling from Blocked $\to$ Allowed triggers a confirmation modal dialog.
+  - Info button `ℹ` (index 22) and modal body list all external URLs transparently (`raw.githubusercontent.com`, `api.github.com`, `pool.ntp.org`, `time.google.com`, `time.nist.gov`).
+* **Strict Outbound Suppression:**
+  - `fetchGithubFirmwareVersion()` and `checkGithubUpdateAsync()` immediately exit if `outbound_internet == 0`.
+  - `handleAutoUpdate()` and `handleAutoUpdateApi()` return 403 Forbidden with warning.
+  - SNTP initialization (`configTzTime()`) is bypassed.
+  - On `/firmware`, an Air-Gap banner is displayed with a link to `/settings#airgap-settings`, and client-side GitHub requests are disabled.
+  - Local network operations (MQTT broker, Web UI, ESP-NOW wireless mesh) remain 100% unaffected.
+
 
 
 
