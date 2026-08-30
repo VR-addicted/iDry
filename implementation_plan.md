@@ -1,6 +1,6 @@
-# Implementation Plan: Bilingual Web Interface (🇩🇪 DE / 🇺🇸 EN) & Authenticated Flash Persistence
+# Implementation Plan: Live GitHub Commit Changelog Feed & Rate-Limit Shield (Build v178)
 
-Implement complete bilingual internationalization across the entire **iDRY-26 Web Application** (Dashboard, Modals, Info Bubbles, Settings, and OTA Firmware pages) with zero-latency client-side switching, platform-independent inline SVG flag icons, and permanent Flash memory persistence for authenticated sessions.
+Implement an automated client-side GitHub Commit Changelog feed on the **Firmware Update Page (`/firmware`)** inside the *VERSIONS-STATUS* panel with 100-commit full history blob fetching, sentence-wide keyword token analysis, 5-minute session caching to protect the 60/h quota, and rate-limit penalty warning banners.
 
 ---
 
@@ -8,58 +8,42 @@ Implement complete bilingual internationalization across the entire **iDRY-26 We
 
 ```mermaid
 flowchart TD
-    A[User clicks Flag Pill DE/EN] --> B{Authenticated Session?}
-    B -- Yes (Logged In) --> C[POST /api/set_language?lang=xx]
-    C --> D[Save web_language to /config.json LittleFS Flash]
-    B -- No (Guest) --> E[Store in browser localStorage]
-    A --> F[0ms DOM Translation via data-i18n]
-    A --> G[Translate Live Grow Advisor Ticker & Speech Bubbles]
-    A --> H[Translate Dynamic Telemetry in updateData]
+    A[Open /firmware in Browser] --> B{5-min sessionStorage Cache valid?}
+    B -- Yes --> C[Load cached commits without API call]
+    B -- No --> D[Fetch 100 commits via GitHub REST API Blob]
+    D --> E[Inspect x-ratelimit-remaining and x-ratelimit-reset headers]
+    E --> F{Rate limit exhausted or HTTP 403?}
+    F -- Yes --> G[Display Red Penalty Warning Banner with Unlock Clock]
+    F -- No (Low <=10) --> H[Display Amber Notice with Remaining Calls]
+    F -- No (OK) --> I[Cache commits in sessionStorage for 5 minutes]
+    D --> J[Parse Commit Titles & Bodies via Heuristic Keyword Engine]
+    J --> K[Assign Priority Tokens: FIX CORE, FIX UI, FEATURE, DOCS, PERF, FIX]
+    J --> L[Format Date: DD.MM.YYYY for DE / MM/DD/YYYY for EN]
+    L --> M[Render Scrollable Glassmorphism Changelog Box]
+    N[User toggles Language DE/EN] --> M
 ```
 
 ---
 
-## User Review & Design Decisions
+## Heuristic Keyword Recognition Priority
 
-- **Two Languages Standard:** Deutsch (🇩🇪 DE) and US English (🇺🇸 EN).
-- **Inline SVG Flag Icons:** Avoids Windows monochrome emoji fallback (`DE DE` / `US EN`) by using crisp, colorful, lightweight inline SVG graphics (16x12px).
-- **Flash vs. Session Storage:**
-  - Guests/unauthenticated users have their language stored in `localStorage`.
-  - Authenticated users automatically synchronize their choice to the ESP32's LittleFS Flash memory (`/config.json`) so newly connecting clients default to the configured language.
-
----
-
-## Implemented Changes
-
-### 1. Backend Core & Configuration (`src/main.cpp`)
-- Added `char web_language[8] = "de";` to `struct Config`.
-- Updated `loadConfiguration()` and `saveConfiguration()` to read and persist `web_language`.
-- Added `web_language` to `/api/data` JSON telemetry payload.
-- Added API endpoint `/api/set_language` (supporting `HTTP_POST` & `HTTP_GET`) guarded by `isWebAuthenticated()`.
-
-### 2. High-DPI Inline SVG Glass Pill Header
-- Standardized `.lang-pill` on:
-  - **Dashboard Monitor (`/`)**
-  - **Settings Management (`/settings`)**
-  - **Firmware Update (`/firmware`)**
-  - **GitHub Online OTA Terminal (`/firmware/autoupdate`)**
-- Uses exact SVG vector definitions for Schwarz-Rot-Gold (🇩🇪) and Stars & Stripes (🇺🇸) with active Cyan-glow styling (`#38bdf8`).
-
-### 3. Comprehensive Dictionary & Heuristics Translation
-- Full dictionary mapping for:
-  - All **Dashboard Cards**: Strategy buttons, Potentiometers, Rotor & Moon, Stoßlüftung Timer, Sensoren 1 & 2, Light Sensoren 1 & 2, VPD, ESP-NOW, MQTT, System Status.
-  - All **14 Help Bubbles (`PANEL_INFOS_I18N`)**: Complete bilingual coverage (Indices 0–21).
-  - All **Modals**: 24h Zoom Chart, VPD Day Confirm, Remote Reboot, Factory Reset.
-  - **Grow Advisor Engine**: Dual-language payloads (`badgeDe`/`badgeEn`, `textDe`/`textEn`) for all heuristic diagnoses.
-  - **Dynamic Telemetry (`updateData()`)**: Fixed overwrite edge cases for Potentiometers, Purge countdown, and connection status.
+| Priority | Token / Badge | Trigger Keywords (Anywhere in Commit Message) | Badge Color |
+| :---: | :--- | :--- | :--- |
+| **1** | **`FIX CORE`** | `FIX_CORE`, `KERNEL`, `SENSOR`, `DRIVER`, `BME280`, `SHT31`, `TSL2561`, `ESPNOW`, `ESP-NOW`, `FAILSAFE`, `WATCHDOG`, `NVS`, `LITTLEFS`, `BOOT`, `EEPROM`, `SERVO` | 🔴 Rot (`#f87171` + Glow) |
+| **2** | **`FIX UI`** | `FIX_UI`, `UI`, `WEB`, `HTML`, `CSS`, `DASHBOARD`, `SPARKLINE`, `MODAL`, `POPUP`, `DESIGN`, `FONT`, `FLAG`, `PILL`, `BANNER`, `LAYOUT`, `THEME`, `DROPDOWN`, `I18N`, `TRANSLAT` | 🟡 Amber (`#fbbf24`) |
+| **3** | **`FEATURE`** | `FEATURE`, `FEAT`, `NEW`, `ADD`, `ADDED`, `IMPLEMENT`, `IMPLEMENTED`, `INTEGRATE`, `INTRODUCE`, `SUPPORT` | 🟢 Grün (`#34d399` + Glow) |
+| **4** | **`DOCS`** | `DOCS`, `DOC`, `README`, `GUIDE`, `DOCUMENTATION`, `MANUAL`, `CHANGELOG`, `AGENTS` | 🔵 Cyan (`#38bdf8`) |
+| **5** | **`PERF`** | `PERF`, `PERFORMANCE`, `REFACTOR`, `CLEANUP`, `OPTIMIZE`, `OPTIMIZED`, `SPEED`, `RAM_SAVING`, `MEM_SAVING` | 🟣 Lila (`#c084fc`) |
+| **6** | **`FIX`** | `FIX`, `FIXED`, `BUG`, `PATCH`, `RESOLVE`, `RESOLVED`, `RESTORE`, `RESTORED`, `CORRECT`, `CORRECTED`, `HOTFIX`, `REPAIR` | 🌸 Rose (`#fb7185`) |
+| **7** | **`FIX` (Default)** | *(kein spezifisches Schlüsselwort)* | ⚪ Schiefergrau (`#cbd5e1`) |
 
 ---
 
 ## Verification & Build Results
 
 - **Compiler:** PlatformIO / ESP32-S3 (Arduino framework)
-- **Build Milestone:** **v174** (17.4 release)
-- **Result:** `[SUCCESS] Exit Code 0`
-- **RAM Usage:** 29.7%
-- **Flash Usage:** 22.7%
-- **Firmware Binary Sync:** `FIRMWARE/firmware.bin` (v174) and `version.txt` auto-synchronized.
+- **Build Milestone:** **v178**
+- **Result:** `[SUCCESS] Exit Code 0` (Took 69.83s)
+- **RAM Usage:** 29.7% (97,244 bytes)
+- **Flash Usage:** 23.0% (1,564,957 bytes)
+- **FIRMWARE Bundle:** Synchronized `FIRMWARE/firmware.bin` and `version.txt` (v178).

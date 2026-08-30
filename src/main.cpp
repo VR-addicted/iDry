@@ -3119,7 +3119,7 @@ void handlePortalRoot() {
                 </details>
                 <div id="purge-section" style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px;">
                     <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; position: relative;">
-                        <span data-i18n="purge_timer">⏳ Stoßlüftungs-Timer</span>
+                        <span data-i18n="purge_timer">Stoßlüftungs-Timer</span>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <span id="purge-badge" style="font-size: 10.5px; font-family: monospace; font-weight: bold; padding: 2px 6px; border-radius: 4px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">Aus</span>
                             <span class="info-btn" onclick="toggleInfo(event, 5)" onmouseenter="showInfo(this, 5)" onmouseleave="hideInfo(this)">i</span>
@@ -3442,7 +3442,7 @@ void handlePortalRoot() {
                 rotor_servo: "Rotor &amp; Servo",
                 rotor_pos: "Rotor Stellung:",
                 hist_rotor: "60m Verlauf (Rotor Öffnung)",
-                purge_timer: "⏳ Stoßlüftungs-Timer",
+                purge_timer: "Stoßlüftungs-Timer",
                 purge_interval: "Intervall:",
                 purge_duration: "Dauer:",
                 temp: "Temperatur:",
@@ -3517,7 +3517,7 @@ void handlePortalRoot() {
                 rotor_servo: "Rotor &amp; Servo",
                 rotor_pos: "Rotor Position:",
                 hist_rotor: "60m History (Rotor Opening)",
-                purge_timer: "⏳ Purge Ventilation Timer",
+                purge_timer: "Purge Ventilation Timer",
                 purge_interval: "Interval:",
                 purge_duration: "Duration:",
                 temp: "Temperature:",
@@ -8113,6 +8113,111 @@ void handleFirmwarePage() {
         .badge-up-to-date { background: rgba(52, 211, 153, 0.15); border: 1px solid rgba(52, 211, 153, 0.3); color: #34d399; padding: 10px 14px; border-radius: 8px; font-size: 13px; text-align: center; margin-bottom: 15px; }
         .badge-update-avail { background: rgba(251, 191, 36, 0.15); border: 1px solid rgba(251, 191, 36, 0.3); color: #fbbf24; padding: 10px 14px; border-radius: 8px; font-size: 13px; text-align: center; margin-bottom: 15px; }
         input[type="file"] { display: block; width: 100%; padding: 10px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #f8fafc; font-size: 13px; margin-bottom: 12px; }
+        .changelog-box {
+            background: rgba(10, 15, 29, 0.75);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            padding: 8px 12px;
+            max-height: 230px;
+            overflow-y: auto;
+            box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
+            margin-top: 12px;
+        }
+        .changelog-box::-webkit-scrollbar { width: 5px; }
+        .changelog-box::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); border-radius: 4px; }
+        .changelog-box::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.3); border-radius: 4px; }
+        .changelog-box::-webkit-scrollbar-thumb:hover { background: rgba(56, 189, 248, 0.6); }
+        .commit-entry {
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            font-size: 12px;
+        }
+        .commit-entry:last-child { border-bottom: none; }
+        .commit-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .commit-badge {
+            font-size: 9.5px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            padding: 2px 7px;
+            border-radius: 9999px;
+            text-transform: uppercase;
+            display: inline-flex;
+            align-items: center;
+            line-height: 1.2;
+        }
+        .badge-fix-core { background: rgba(239, 68, 68, 0.22); border: 1px solid rgba(239, 68, 68, 0.55); color: #f87171; box-shadow: 0 0 6px rgba(239, 68, 68, 0.3); }
+        .badge-fix-ui { background: rgba(245, 158, 11, 0.22); border: 1px solid rgba(245, 158, 11, 0.55); color: #fbbf24; }
+        .badge-fix { background: rgba(244, 63, 94, 0.22); border: 1px solid rgba(244, 63, 94, 0.55); color: #fb7185; }
+        .badge-feat { background: rgba(16, 185, 129, 0.22); border: 1px solid rgba(16, 185, 129, 0.55); color: #34d399; box-shadow: 0 0 6px rgba(16, 185, 129, 0.3); }
+        .badge-docs { background: rgba(6, 182, 212, 0.22); border: 1px solid rgba(6, 182, 212, 0.55); color: #38bdf8; }
+        .badge-refactor { background: rgba(168, 85, 247, 0.22); border: 1px solid rgba(168, 85, 247, 0.55); color: #c084fc; }
+        .badge-default { background: rgba(148, 163, 184, 0.15); border: 1px solid rgba(148, 163, 184, 0.35); color: #cbd5e1; }
+        .commit-date {
+            font-size: 10px;
+            font-family: monospace;
+            color: #94a3b8;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1.5px 5.5px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            white-space: nowrap;
+            text-align: center;
+        }
+        .commit-title {
+            color: #f1f5f9;
+            font-weight: 500;
+            flex: 1;
+            word-break: break-word;
+            line-height: 1.35;
+        }
+        .commit-hash {
+            font-family: 'Consolas', monospace;
+            font-size: 10px;
+            color: #64748b;
+            text-decoration: none;
+            background: rgba(15, 23, 42, 0.7);
+            padding: 1.5px 5.5px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.2s;
+            margin-left: auto;
+        }
+        .commit-hash:hover { color: #38bdf8; border-color: #38bdf8; }
+        .commit-body {
+            margin-top: 4px;
+            margin-left: 72px;
+            padding-left: 8px;
+            border-left: 2px solid rgba(255, 255, 255, 0.08);
+            color: #94a3b8;
+            font-size: 11px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+        }
+        .gh-warn-penalty {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.45);
+            color: #fca5a5;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 11.5px;
+            line-height: 1.45;
+            margin-top: 10px;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.25);
+        }
+        .gh-warn-low {
+            background: rgba(245, 158, 11, 0.15);
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            color: #fde047;
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 11px;
+            margin-top: 8px;
+        }
     </style>
 </head>
 <body>
@@ -8168,6 +8273,14 @@ void handleFirmwarePage() {
   }
 
   html += R"rawhtml(
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; margin-bottom:8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top:12px;">
+                <span style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:#94a3b8; font-weight:bold;" data-i18n="fw_changelog_title">Aktuelle Änderungen (GitHub)</span>
+                <span style="font-size:10px; color:#64748b; font-family:monospace;">VR-addicted/grow-zone-iDry</span>
+            </div>
+            <div id="changelog-box" class="changelog-box">
+                <div style="color:#64748b; font-size:11.5px; font-style:italic;" data-i18n="fw_loading_commits">Lade Commit-Historie von GitHub...</div>
+            </div>
+            <div id="gh-ratelimit-warn" style="display:none;"></div>
         </div>
 
         <div class="card">
@@ -8202,7 +8315,12 @@ void handleFirmwarePage() {
                 fw_btn_flash: "Firmware .bin Flashen",
                 fw_btn_settings: "Zurück zu Einstellungen",
                 fw_btn_monitor: "Zurück zum Dashboard",
-                fw_flashing: "⚡ Flashen gestartet..."
+                fw_flashing: "⚡ Flashen gestartet...",
+                fw_changelog_title: "Aktuelle Änderungen (GitHub)",
+                fw_loading_commits: "Lade Commit-Historie von GitHub...",
+                fw_commits_err: "Changelog nicht erreichbar (Offline / Rate-Limit)",
+                fw_rate_penalty: "⛔ <b>GitHub API Rate-Limit erreicht (60/h Penalty):</b> Entsperrung um {reset} Uhr.<br>Firmware (.bin) bitte direkt auf GitHub downloaden und unten über 'Manuelles Firmware File Flash' flashen.",
+                fw_rate_low: "⚠️ <b>GitHub API Limit:</b> Noch {rem} von 60 Anfragen frei (Reset: {reset} Uhr)."
             },
             en: {
                 fw_title: "Firmware &amp; OTA Update",
@@ -8218,11 +8336,191 @@ void handleFirmwarePage() {
                 fw_btn_flash: "Flash .bin Firmware",
                 fw_btn_settings: "Back to Settings",
                 fw_btn_monitor: "Back to Dashboard",
-                fw_flashing: "⚡ Flashing started..."
+                fw_flashing: "⚡ Flashing started...",
+                fw_changelog_title: "Recent Changes (GitHub)",
+                fw_loading_commits: "Loading commit history from GitHub...",
+                fw_commits_err: "Changelog unavailable (Offline / Rate limit)",
+                fw_rate_penalty: "⛔ <b>GitHub API rate limit reached (60/h penalty):</b> Unlocks at {reset}.<br>Please download firmware (.bin) from GitHub and flash manually below.",
+                fw_rate_low: "⚠️ <b>GitHub API quota:</b> {rem} of 60 requests remaining (Reset: {reset})."
             }
         };
 
         let currentLang = localStorage.getItem('idry_lang') || 'de';
+        let cachedCommits = [];
+        let rateLimitInfo = { remaining: 60, reset: 0, penalty: false };
+
+        function formatCommitDate(isoDateStr, lang) {
+            const d = new Date(isoDateStr);
+            if (isNaN(d.getTime())) return "";
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            if (lang === 'en') {
+                return month + '/' + day + '/' + year;
+            } else {
+                return day + '.' + month + '.' + year;
+            }
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[m]);
+        }
+
+        function parseCommitToken(title, body = "") {
+            const combined = (title + " " + body).toUpperCase();
+            let token = "FIX";
+            let badgeClass = "badge-default";
+            let cleanTitle = title;
+
+            // 1. Priority: FIX CORE (Firmware kernel, drivers, sensors, ESP-NOW, fail-safes, storage)
+            if (/\b(FIX_CORE|FIX-CORE|CORE_FIX|CORE FIX|KERNEL|DRIVER|SENSOR|BME280|SHT31|TSL2561|ESPNOW|ESP-NOW|FAILSAFE|WATCHDOG|NVS|LITTLEFS|BOOT|EEPROM|SERVO)\b/.test(combined)) {
+                token = "FIX CORE";
+                badgeClass = "badge-fix-core";
+                cleanTitle = title.replace(/^\[?FIX[_-]?CORE\]?:?\s*/i, "");
+            }
+            // 2. Priority: FIX UI (Web interface, styling, HTML, CSS, canvas, modals, fonts, layout)
+            else if (/\b(FIX_UI|FIX-UI|UI_FIX|UI FIX|UI|WEB|HTML|CSS|DASHBOARD|SPARKLINE|MODAL|POPUP|DESIGN|FONT|FLAG|PILL|BANNER|LAYOUT|THEME|DROPDOWN|I18N|TRANSLAT)\b/.test(combined)) {
+                token = "FIX UI";
+                badgeClass = "badge-fix-ui";
+                cleanTitle = title.replace(/^\[?FIX[_-]?UI\]?:?\s*/i, "");
+            }
+            // 3. Priority: FEATURE (New functionality, modes, additions)
+            else if (/\b(FEATURE|FEAT|NEW|ADD|ADDED|IMPLEMENT|IMPLEMENTED|INTEGRATE|INTRODUCE|SUPPORT)\b/.test(combined)) {
+                token = "FEATURE";
+                badgeClass = "badge-feat";
+                cleanTitle = title.replace(/^\[?(FEATURE|FEAT)(\(.*?\))?\]?:?\s*/i, "");
+            }
+            // 4. Priority: DOCS (Documentation, README, manuals)
+            else if (/\b(DOCS|DOC|README|GUIDE|DOCUMENTATION|MANUAL|CHANGELOG|AGENTS)\b/.test(combined)) {
+                token = "DOCS";
+                badgeClass = "badge-docs";
+                cleanTitle = title.replace(/^\[?(DOCS|DOC)\]?:?\s*/i, "");
+            }
+            // 5. Priority: PERF / REFACTOR (Optimizations, speed, cleanups)
+            else if (/\b(PERF|PERFORMANCE|REFACTOR|CLEANUP|OPTIMIZE|OPTIMIZED|SPEED|RAM_SAVING|MEM_SAVING)\b/.test(combined)) {
+                token = "PERF";
+                badgeClass = "badge-refactor";
+                cleanTitle = title.replace(/^\[?(REFACTOR|PERF)\]?:?\s*/i, "");
+            }
+            // 6. Priority: FIX (General bugfixes, repairs, restores)
+            else if (/\b(FIX|FIXED|BUG|PATCH|RESOLVE|RESOLVED|RESTORE|RESTORED|CORRECT|CORRECTED|HOTFIX|REPAIR)\b/.test(combined)) {
+                token = "FIX";
+                badgeClass = "badge-fix";
+                cleanTitle = title.replace(/^\[?(FIX|BUG|PATCH)(\(.*?\))?\]?:?\s*/i, "");
+            }
+
+            return { token, badgeClass, cleanTitle: cleanTitle.trim() || title };
+        }
+
+        function renderRateLimitNotice() {
+            const warnEl = document.getElementById('gh-ratelimit-warn');
+            if (!warnEl) return;
+            const dict = i18n[currentLang] || i18n.de;
+            let resetTimeStr = "--:--:--";
+            if (rateLimitInfo.reset > 0) {
+                const d = new Date(rateLimitInfo.reset * 1000);
+                resetTimeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            }
+
+            if (rateLimitInfo.penalty) {
+                warnEl.style.display = 'block';
+                warnEl.className = 'gh-warn-penalty';
+                warnEl.innerHTML = dict.fw_rate_penalty.replace('{reset}', resetTimeStr);
+            } else if (rateLimitInfo.remaining <= 10 && rateLimitInfo.remaining >= 0) {
+                warnEl.style.display = 'block';
+                warnEl.className = 'gh-warn-low';
+                warnEl.innerHTML = dict.fw_rate_low.replace('{rem}', rateLimitInfo.remaining).replace('{reset}', resetTimeStr);
+            } else {
+                warnEl.style.display = 'none';
+            }
+        }
+
+        function renderChangelog() {
+            const container = document.getElementById('changelog-box');
+            if (!container) return;
+            if (!cachedCommits || cachedCommits.length === 0) return;
+
+            let html = "";
+            cachedCommits.forEach(c => {
+                const fullMsg = (c.commit && c.commit.message) ? c.commit.message.trim() : "";
+                const lines = fullMsg.split('\n');
+                const rawTitle = lines[0] || "";
+                const body = lines.slice(1).join('\n').trim();
+
+                const { token, badgeClass, cleanTitle } = parseCommitToken(rawTitle, body);
+                const dateStr = formatCommitDate(c.commit && c.commit.author ? c.commit.author.date : "", currentLang);
+                const shortSha = c.sha ? c.sha.substring(0, 7) : "";
+                const commitUrl = `https://github.com/VR-addicted/grow-zone-iDry/commit/${c.sha}`;
+
+                html += `
+                    <div class="commit-entry">
+                        <div class="commit-header">
+                            ${dateStr ? `<span class="commit-date">${dateStr}</span>` : ''}
+                            <span class="commit-badge ${badgeClass}">${token}</span>
+                            <span class="commit-title">${escapeHtml(cleanTitle)}</span>
+                            ${shortSha ? `<a href="${commitUrl}" target="_blank" class="commit-hash" title="View on GitHub">#${shortSha}</a>` : ''}
+                        </div>
+                        ${body ? `<div class="commit-body">${escapeHtml(body)}</div>` : ''}
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        async function fetchGitHubCommits() {
+            const container = document.getElementById('changelog-box');
+            const dict = i18n[currentLang] || i18n.de;
+
+            // 5-minute browser cache in sessionStorage to protect 60/h quota
+            try {
+                const sessionData = sessionStorage.getItem('idry_gh_commits');
+                const sessionTime = sessionStorage.getItem('idry_gh_commits_time');
+                if (sessionData && sessionTime && (Date.now() - parseInt(sessionTime) < 300000)) {
+                    cachedCommits = JSON.parse(sessionData);
+                    renderChangelog();
+                    renderRateLimitNotice();
+                    return;
+                }
+            } catch (e) {}
+
+            try {
+                const res = await fetch('https://api.github.com/repos/VR-addicted/grow-zone-iDry/commits?per_page=100', {
+                    headers: { 'Accept': 'application/vnd.github.v3+json' }
+                });
+
+                const remaining = res.headers.get('x-ratelimit-remaining');
+                const resetEpoch = res.headers.get('x-ratelimit-reset');
+                if (remaining !== null) rateLimitInfo.remaining = parseInt(remaining);
+                if (resetEpoch !== null) rateLimitInfo.reset = parseInt(resetEpoch);
+
+                if (res.status === 403 || rateLimitInfo.remaining === 0) {
+                    rateLimitInfo.penalty = true;
+                    renderRateLimitNotice();
+                    throw new Error('Rate limit exceeded');
+                }
+
+                if (!res.ok) throw new Error('Status ' + res.status);
+                const data = await res.json();
+                if (Array.isArray(data) && data.length > 0) {
+                    cachedCommits = data;
+                    try {
+                        sessionStorage.setItem('idry_gh_commits', JSON.stringify(data));
+                        sessionStorage.setItem('idry_gh_commits_time', Date.now().toString());
+                    } catch (e) {}
+                    renderChangelog();
+                    renderRateLimitNotice();
+                } else {
+                    if (container) container.innerHTML = `<div style="color:#64748b; font-size:11.5px; font-style:italic;">${dict.fw_commits_err}</div>`;
+                }
+            } catch (err) {
+                console.warn('Could not load GitHub commits:', err);
+                renderRateLimitNotice();
+                if (container && (!cachedCommits || cachedCommits.length === 0)) {
+                    container.innerHTML = `<div style="color:#64748b; font-size:11.5px; font-style:italic;">${dict.fw_commits_err}</div>`;
+                }
+            }
+        }
 
         function setLanguage(lang) {
             currentLang = lang;
@@ -8241,6 +8539,9 @@ void handleFirmwarePage() {
                     el.innerHTML = dict[key];
                 }
             });
+
+            renderChangelog();
+            renderRateLimitNotice();
 
             // Sync language preference with ESP32 Flash (persisted if authenticated)
             fetch('/api/set_language?lang=' + encodeURIComponent(lang), { method: 'POST' }).catch(() => {});
@@ -8266,6 +8567,7 @@ void handleFirmwarePage() {
         }
 
         setLanguage(currentLang);
+        fetchGitHubCommits();
     </script>
 </body>
 </html>

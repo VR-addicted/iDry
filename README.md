@@ -165,6 +165,19 @@ Im Gegensatz zu gewöhnlichen Umluftventilatoren im Trockenzelt (die die Luft nu
   * **Nicht eingeloggt:** Die Sprachauswahl bleibt für die aktuelle Session im Browser-`localStorage` gespeichert.
   * **Eingeloggt (Authentifiziert):** Beim Klick auf die Flagge wird die Sprache automatisch über `POST /api/set_language` in `/config.json` (LittleFS Flash) dauerhaft als Geräte-Standard gesichert. Neu verbindende Browser und Geräte starten somit automatisch in der gespeicherten Wunschsprache.
 
+### 14. Live GitHub Commit Changelog Feed & Rate-Limit Shield (v177-v178)
+* **100-Commits Full-History-Blob:** Lädt in einem einzigen API-Aufruf bis zu 100 aktuelle Git-Commits direkt im Browser des Benutzers (0 Byte ESP32 Heap-Verbrauch!).
+* **5-Minuten Session-Storage-Cache:** Schont das 60 Anfragen/Stunde Limit von GitHub. Wiederholte Aufrufe oder Page-Refreshes innerhalb von 5 Minuten greifen auf den Browser-Cache zu (0 API-Calls).
+* **Intelligente Satz- & Keyword-Erkennung:** Erkennt Schlüsselwörter flexibel im gesamten Commit-Text (ohne Pflicht-Doppelpunkt):
+  * 🔴 `FIX CORE` (Rot `#f87171`): Firmware-, Sensor-, ESP-NOW-, Watchdog-, NVS- oder Core-Fixes.
+  * 🟡 `FIX UI` (Amber `#fbbf24`): Frontend-, Styling-, HTML-, CSS-, Sparkline- oder Layout-Optimierungen.
+  * 🟢 `FEATURE` (Grün `#34d399`): Neue Funktionen, Modi oder Tools.
+  * 🔵 `DOCS` (Cyan `#38bdf8`): Dokumentation & README.
+  * 🟣 `PERF` / `REFACTOR` (Lila `#c084fc`): Performance-, Speicher- & Code-Refactorings.
+  * 🌸 `FIX` (Rose `#fb7185` / Standard): Allgemeine Bugfixes & neutrale Commits für harmonisches Schriftbild.
+* **Rate-Limit-Header Analyse & Warn-Banner:** Liest `x-ratelimit-remaining` und `x-ratelimit-reset` aus. Bei Quotenerschöpfung (HTTP 403) warnt ein rotes Penalty-Banner mit exakter Uhrzeit bis zur Entsperrung und Link zum manuellen .bin-Flash.
+* **Bilinguale Datumsformatierung:** Automatische Umschaltung zwischen `DD.MM.YYYY` (Deutsch) und `MM/DD/YYYY` (US-Englisch) synchron zur Header-Sprachwahl mit anklickbaren GitHub-Hashes (`#7c4a123`).
+
 ---
 
 ## 🏗️ Hardware-Ausbaustufen (Skalierbarkeit)

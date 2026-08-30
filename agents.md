@@ -200,6 +200,28 @@ Do not change SPI, I2C, ADC, or actuator pin assignments:
   - Authenticated users (logged in): Changing language sends `POST /api/set_language?lang=de|en` to the ESP32 backend. The firmware verifies `isWebAuthenticated()`, updates `sysConfig.web_language`, and permanently persists the choice to LittleFS (`/config.json`).
   - First-time connecting devices/browsers automatically default to the device's Flash-configured `web_language`.
 
+---
+
+## GitHub Commit Changelog & Message Token Rules
+* **Client-Side REST Fetch (`/firmware`):**
+  - Fetches up to 100 commits via `https://api.github.com/repos/VR-addicted/grow-zone-iDry/commits?per_page=100` in a single JSON blob directly in client browser JS (0 Byte ESP32 Heap overhead).
+  - Uses 5-minute browser `sessionStorage` cache (`idry_gh_commits`) to shield the 60 requests/hour GitHub rate limit from page refreshes.
+* **Sentence-Wide Keyword & Token Intelligence:**
+  - `FIX_CORE` -> Red capsule badge (`FIX CORE`, `#f87171` with red glow). Matches `FIX_CORE`, `KERNEL`, `SENSOR`, `DRIVER`, `BME280`, `SHT31`, `TSL2561`, `ESPNOW`, `ESP-NOW`, `FAILSAFE`, `WATCHDOG`, `NVS`, `LITTLEFS`, `BOOT`, `EEPROM`, `SERVO`.
+  - `FIX_UI` -> Amber capsule badge (`FIX UI`, `#fbbf24`). Matches `FIX_UI`, `UI`, `WEB`, `HTML`, `CSS`, `DASHBOARD`, `SPARKLINE`, `MODAL`, `POPUP`, `DESIGN`, `FONT`, `FLAG`, `PILL`, `BANNER`, `LAYOUT`, `THEME`, `DROPDOWN`, `I18N`, `TRANSLAT`.
+  - `FEATURE` -> Green capsule badge (`FEATURE`, `#34d399` with green glow). Matches `FEATURE`, `FEAT`, `NEW`, `ADD`, `ADDED`, `IMPLEMENT`, `IMPLEMENTED`, `INTEGRATE`, `INTRODUCE`, `SUPPORT`.
+  - `DOCS` -> Cyan capsule badge (`DOCS`, `#38bdf8`). Matches `DOCS`, `DOC`, `README`, `GUIDE`, `DOCUMENTATION`, `MANUAL`, `CHANGELOG`, `AGENTS`.
+  - `PERF` / `REFACTOR` -> Purple capsule badge (`PERF`, `#c084fc`). Matches `PERF`, `PERFORMANCE`, `REFACTOR`, `CLEANUP`, `OPTIMIZE`, `OPTIMIZED`, `SPEED`, `RAM_SAVING`, `MEM_SAVING`.
+  - `FIX` -> Rose capsule badge (`FIX`, `#fb7185`). Matches `FIX`, `FIXED`, `BUG`, `PATCH`, `RESOLVE`, `RESOLVED`, `RESTORE`, `RESTORED`, `CORRECT`, `CORRECTED`, `HOTFIX`, `REPAIR`.
+  - Untagged commits -> Default slate capsule badge (`FIX`, `#cbd5e1`). Ensures clean, uniform visual alignment.
+* **Rate-Limit Inspection & Penalty Warning:**
+  - Evaluates `x-ratelimit-remaining` and `x-ratelimit-reset`. On 403 or quota exhaustion, renders prominent penalty banner with unlock timestamp and manual .bin flash link.
+* **Bilingual Date & Link Formatting:**
+  - Formats commit date based on active `currentLang`: `DD.MM.YYYY` for `de`, `MM/DD/YYYY` for `en`.
+  - Links `#<short_sha>` to `https://github.com/VR-addicted/grow-zone-iDry/commit/<sha>`.
+
+
+
 
 
 
