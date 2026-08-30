@@ -402,9 +402,9 @@ struct HistorySample {
   int8_t rssi_min;
 };
 
-// 120-Minute (1-min resolution) and 24-Hour (5-min resolution) RAM Ring Buffers
+// 240-Minute (1-min resolution, 4 Hours) and 24-Hour (5-min resolution) RAM Ring Buffers
 const int HIST_120M_SIZE =
-    120; // 120 samples x 1 minute = 120 minutes (2 hours)
+    240; // 240 samples x 1 minute = 240 minutes (4 hours)
 HistorySample history120mBuffer[HIST_120M_SIZE];
 int history120mCount = 0;
 int history120mHead = 0;
@@ -5537,12 +5537,11 @@ void handlePortalRoot() {
             const h = canvas.height = boxH * dpr;
 
             ctx.clearRect(0, 0, w, h);
-            const isRssi = (type === 'rssi');
-            const targetHist = (isRssi && history24h && history24h.length > 0) ? history24h : history120m;
-            if (!targetHist || targetHist.length === 0) return;
+            if (!history120m || history120m.length === 0) return;
 
-            const count = isRssi ? 24 : 60;
-            const data120m = targetHist.slice(-count);
+            const isRssi = (type === 'rssi');
+            const count = isRssi ? 240 : 60; // 4 Hours (240 minutes) for RSSI, 60 minutes for other cards
+            const data120m = history120m.slice(-count);
 
             let minY = 0, maxY = 100, midY = 50;
             let labelMax = "100", labelMid = "50", labelMin = "0";
@@ -5706,7 +5705,7 @@ void handlePortalRoot() {
             ctx.lineTo(w, baseY);
             ctx.stroke();
 
-            const tickStep = (type === 'rssi') ? 30 : 15;
+            const tickStep = isRssi ? 60 : 15;
             for (let i = 0; i <= count; i += tickStep) {
                 const tx = marginL + i * candleW;
                 const tickH = (i % (tickStep * 2) === 0) ? 4 * dpr : 2 * dpr;
