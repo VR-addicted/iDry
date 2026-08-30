@@ -9207,7 +9207,9 @@ void handleAutoUpdate() {
                 ota_back: "Zurück zu Firmware Update",
                 log_start: "[SYSTEM] Starte Online-Update von GitHub...",
                 log_connect: "[CONNECT] Verbinde mit GitHub raw.githubusercontent.com...",
-                log_download: "[DOWNLOAD] Datei FIRMWARE/firmware.bin erfolgreich geladen",
+                log_downloading: "[DOWNLOAD] Download & Flash-Prozess gestartet (Dauer: ca. 20–60 Sekunden)...",
+                log_wait_hint: "[HINWEIS] Bitte das Gerät nicht ausschalten. Der Vorgang dauert max. 1 Minute.",
+                log_download: "[DOWNLOAD] Datei FIRMWARE/firmware.bin erfolgreich empfangen",
                 log_verify: "[HEADER VERIFY] ESP32 Magic Byte (0xE9) und Header gültig!",
                 log_flash: "[FLASH] Inaktive OTA-Bank (app0/app1) erfolgreich beschrieben!",
                 log_reboot: "[REBOOT] iDry 26 reboot. Stay calm, we are back online in a second :-)",
@@ -9218,7 +9220,9 @@ void handleAutoUpdate() {
                 ota_back: "Back to Firmware Update",
                 log_start: "[SYSTEM] Starting online update from GitHub...",
                 log_connect: "[CONNECT] Connecting to GitHub raw.githubusercontent.com...",
-                log_download: "[DOWNLOAD] File FIRMWARE/firmware.bin successfully downloaded",
+                log_downloading: "[DOWNLOAD] Download & flash process started (Duration: approx. 20–60 seconds)...",
+                log_wait_hint: "[NOTE] Please do not power off the device. The process takes up to 1 minute.",
+                log_download: "[DOWNLOAD] File FIRMWARE/firmware.bin successfully received",
                 log_verify: "[HEADER VERIFY] ESP32 Magic Byte (0xE9) and header valid!",
                 log_flash: "[FLASH] Inactive OTA bank (app0/app1) successfully written!",
                 log_reboot: "[REBOOT] iDry 26 reboot. Stay calm, we are back online in a second :-)",
@@ -9267,12 +9271,29 @@ void handleAutoUpdate() {
         const dict = i18n[currentLang] || i18n.de;
 
         appendLog(dict.log_connect);
-        fillEl.style.width = '20%';
-        textEl.innerText = '20%';
+        fillEl.style.width = '15%';
+        textEl.innerText = '15%';
+
+        setTimeout(() => {
+            appendLog(dict.log_downloading);
+            appendLog(dict.log_wait_hint);
+            fillEl.style.width = '30%';
+            textEl.innerText = '30%';
+        }, 500);
+
+        let curProgress = 30;
+        const progressTimer = setInterval(() => {
+            if (curProgress < 88) {
+                curProgress += 1;
+                fillEl.style.width = curProgress + '%';
+                textEl.innerText = curProgress + '%';
+            }
+        }, 500);
 
         fetch('/api/firmware/autoupdate_start')
             .then(r => r.json())
             .then(data => {
+                clearInterval(progressTimer);
                 const d = i18n[currentLang] || i18n.de;
                 if (data.status === 'ok') {
                     fillEl.style.width = '100%';
@@ -9290,6 +9311,7 @@ void handleAutoUpdate() {
                 }
             })
             .catch(err => {
+                clearInterval(progressTimer);
                 const d = i18n[currentLang] || i18n.de;
                 fillEl.style.width = '0%';
                 textEl.innerText = (currentLang === 'en' ? 'Error' : 'Fehler');
