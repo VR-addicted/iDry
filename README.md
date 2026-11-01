@@ -205,6 +205,26 @@ Das System erkennt alle Komponenten beim Systemstart vollautomatisch und passt s
 
 ---
 
+## 📶 Erstinbetriebnahme & WLAN-Kopplung (Setup Captive Portal)
+
+Nach dem ersten Flashen oder nach einem Zurücksetzen auf Werkseinstellungen startet der iDry-26 vollautomatisch in den **Captive Portal Setup-Modus**:
+
+1. **WLAN-Access-Point verbinden:**  
+   Der ESP32 spannt ein eigenes offenes WLAN auf:  
+   `IDRY26-XXXXXX` *(wobei `XXXXXX` den letzten 6 Ziffern der Hardware-MAC-Adresse entspricht, z. B. `IDRY26-26C304`)*.
+2. **Einrichtungsseite aufrufen:**  
+   Verbinde dein Smartphone, Tablet oder Laptop mit diesem WLAN. Das Captive Portal öffnet sich in der Regel automatisch als Anmeldeseite.  
+   *(Falls nicht automatisch geöffnet: Rufe im Webbrowser einfach `http://192.168.4.1` auf).*
+3. **Zugangsdaten hinterlegen:**  
+   - Wähle dein 2.4 GHz Heim-WLAN (SSID) aus der Liste aus und gib das Passwort ein.
+   - Optional: Trage die IP deines MQTT-Brokers (z. B. Home Assistant Mosquitto) sowie Port, Benutzer und Passwort ein.
+   - Klicke auf **"Speichern & Verbinden"**.
+4. **Automatischer Neustart & Normalbetrieb:**  
+   Die Konfiguration wird 32-Bit CRC-geschützt im LittleFS-Flash (`/config.json`) gesichert. Der ESP32 startet neu und verbindet sich mit deinem Heim-Router.  
+   Die zugewiesene lokale IP-Adresse wird sofort auf dem e-Paper/TFT-Display angezeigt und das Gerät ist über das Heimnetzwerk erreichbar.
+
+---
+
 ## 🔌 Hardware-Verkabelung (Pinout)
 
 Die Displays teilen sich denselben physischen SPI-Kabelbaum (JST-Stecker am YD-ESP32-S3):
@@ -341,6 +361,21 @@ Die Displays teilen sich denselben physischen SPI-Kabelbaum (JST-Stecker am YD-E
   - Deaktiviert öffentliche NTP-Zeitsynchronisation (`pool.ntp.org`).
   - `/firmware` blendet einen Air-Gap Warnhinweis mit direktem Link zu den Einstellungen ein und unterdrückt clientseitige GitHub-Abfragen.
   - Lokaler Netzwerkverkehr (MQTT Broker, Web UI, ESP-NOW Funk) bleibt zu 100% aktiv.
+
+---
+
+### 15. Hardware-Tasten (GPIO 0 / BOOT) & Notfall-Factory-Reset
+* **Onboard BOOT-Taste (GPIO 0):**
+  * **Normalbetrieb:** Keine störende Funktion während der normalen Regelung.
+  * **3 Sekunden gedrückt halten:** Löst einen **Hardware Factory Reset** aus (`performFactoryReset`).
+  * **Akustische Quittierung:** Der passive Buzzer spielt einen absteigenden 3-Ton-Alarm (C6 $\to$ G5 $\to$ C5).
+  * **Sauberer Neuanfang:** Löscht die `/config.json` aus dem LittleFS-Flash, setzt alle Parameter auf sichere Werkseinstellungen zurück und startet das Gerät augenblicklich im **Captive Portal Einrichtungsmodus** (`IDRY26-XXXXXX` unter `192.168.4.1`).
+  * *Ideal, wenn der Router gewechselt wurde, das WLAN-Passwort geändert wurde oder das Web-Passwort vergessen wurde!*
+
+### 16. Robuste Netzwerk- & Watchdog-Architektur (MQTT-Entkopplung & Slave-Isolation)
+* **Vollständige MQTT-Entkopplung:** Ein Ausfall oder Neustart des MQTT-Brokers (z. B. Home Assistant Wartung) trennt **niemals** mehr die WLAN-Verbindung des iDry! Der MQTT-Client versucht im Hintergrund alle 10 Sekunden sauber eine Wiederverbindung, während Dashboard, Sensoren und Servo dauerhaft unterbrechungsfrei laufen.
+* **Sichere Disconnect-Logik:** Im gesamten Firmware-Code wird ausschließlich `WiFi.disconnect(false)` verwendet. Dies verhindert, dass lwIP-Sockets während aktiver Webserver-Verbindungen auf deinitialisierte Wi-Fi Treiberpuffer (`esp_wifi_internal_free_rx_buffer`) zugreifen (`LoadProhibited` Crash-Prävention).
+* **ESP-NOW Watchdog Rollen-Isolation:** Der automatische ESP-NOW Re-Init Watchdog läuft **ausschließlich auf dem Slave** (`sysConfig.espnow_role == 2`). Der Master sendet autonom und gerät nicht mehr in Re-Init-Schleifen, falls der Slave vorübergehend stromlos oder nicht erreichbar ist.
 
 ---
 

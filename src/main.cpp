@@ -10338,15 +10338,18 @@ void loop() {
   }
 
   // =====================================================================
-  // AUTOMATIC ESP-NOW RE-INITIALIZATION WATCHDOG (>15s Disconnect)
+  // AUTOMATIC ESP-NOW RE-INITIALIZATION WATCHDOG (>20s Disconnect)
+  // ONLY on Slave devices (Role 2) as specified in system rules.
+  // Master is the autonomous transmitter and should never reset ESP-NOW stack
+  // simply because its paired Slave is unreachable or powered down.
   // =====================================================================
   static unsigned long lastEspNowReinitWatchdogTime = 0;
-  if (!isPairingActive && sysConfig.espnow_role > 0 &&
+  if (!isPairingActive && sysConfig.espnow_role == 2 &&
       strlen(sysConfig.espnow_peer_mac) > 0) {
-    if (lastEspNowRxTime == 0 || (millis() - lastEspNowRxTime > 15000)) {
-      if (millis() - lastEspNowReinitWatchdogTime >= 10000) {
+    if (lastEspNowRxTime == 0 || (millis() - lastEspNowRxTime > 20000)) {
+      if (millis() - lastEspNowReinitWatchdogTime >= 15000) {
         lastEspNowReinitWatchdogTime = millis();
-        Serial.println("[ESP-NOW Watchdog] Re-initializing ESP-NOW stack to "
+        Serial.println("[ESP-NOW Watchdog] Re-initializing ESP-NOW stack on Slave to "
                        "restore link...");
         initEspNow();
       }
@@ -10461,7 +10464,7 @@ void loop() {
         Serial.printf("[WLAN] Watchdog: Router disappeared (RSSI = %d dBm). "
                       "Forcing disconnect...\n",
                       rssi);
-        WiFi.disconnect(true);
+        WiFi.disconnect(false);
         connectedSince = 0;
       } else if (millis() - lastGatewayCheck >=
                  2000) { // Verify gateway status every 2 seconds
@@ -10469,7 +10472,7 @@ void loop() {
         if (!checkGatewayReachable()) {
           Serial.println("[WLAN] Watchdog: Gateway unreachable (Active TCP "
                          "check failed). Forcing disconnect...");
-          WiFi.disconnect(true);
+          WiFi.disconnect(false);
           connectedSince = 0;
         }
       }
@@ -10516,42 +10519,33 @@ void loop() {
   if (WiFi.status() == WL_CONNECTED && strlen(sysConfig.mqtt_server) > 0) {
     if (mqttClient.connected()) {
       lastMqttOk = millis();
+      mqttClient.loop();
     } else {
-      // Watchdog 2: Zombie Connection check. If WiFi reports connected but MQTT
-      // cannot connect for 25s
-      if (millis() - lastMqttOk > 25000) {
-        Serial.println("[WLAN] Watchdog: Zombie link detected (MQTT "
-                       "unreachable for 25s). Resetting WiFi...");
-        WiFi.disconnect(true);
-        connectedSince = 0;
-        lastMqttOk = millis();
+      static unsigned long lastMqttConnectAttempt = 0;
+      if (millis() - lastMqttConnectAttempt >= 10000) {
+        lastMqttConnectAttempt = millis();
+        Serial.println("[MQTT] Connecting to broker...");
+        String clientID = String(sysConfig.mqtt_device_name) + "-" +
+                          String(random(0xffff), HEX);
+
+        bool mqttConnected = false;
+        if (strlen(sysConfig.mqtt_user) > 0) {
+          mqttConnected = mqttClient.connect(
+              clientID.c_str(), sysConfig.mqtt_user, sysConfig.mqtt_pass);
+        } else {
+          mqttConnected = mqttClient.connect(clientID.c_str());
+        }
+
+        if (mqttConnected) {
+          Serial.println("[MQTT] Broker Connected!");
+          registerHomeAssistantDevices();
+          publishMqttState(); // Publish initial state telemetry immediately!
+        } else {
+          Serial.printf("[MQTT] Connection failed, rc=%d. Retrying in 10s.\n",
+                        mqttClient.state());
+        }
       }
     }
-    static unsigned long lastMqttConnectAttempt = 0;
-    if (!mqttClient.connected() && millis() - lastMqttConnectAttempt >= 10000) {
-      lastMqttConnectAttempt = millis();
-      Serial.println("[MQTT] Connecting to broker...");
-      String clientID = String(sysConfig.mqtt_device_name) + "-" +
-                        String(random(0xffff), HEX);
-
-      bool mqttConnected = false;
-      if (strlen(sysConfig.mqtt_user) > 0) {
-        mqttConnected = mqttClient.connect(
-            clientID.c_str(), sysConfig.mqtt_user, sysConfig.mqtt_pass);
-      } else {
-        mqttConnected = mqttClient.connect(clientID.c_str());
-      }
-
-      if (mqttConnected) {
-        Serial.println("[MQTT] Broker Connected!");
-        registerHomeAssistantDevices();
-        publishMqttState(); // Publish initial state telemetry immediately!
-      } else {
-        Serial.printf("[MQTT] Connection failed, rc=%d. Retrying in 10s.\n",
-                      mqttClient.state());
-      }
-    }
-    mqttClient.loop();
   }
 
   static unsigned long lastUpdate = 0;
